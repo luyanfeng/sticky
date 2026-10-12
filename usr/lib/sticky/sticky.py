@@ -18,6 +18,16 @@ from manager import NotesManager
 from common import FileHandler, HoverBox, prompt, confirm
 from util import gnote_to_internal_format
 
+def running_under_wayland():
+    """Whether the app is running on the native Wayland backend.
+
+    Wayland compositors don't let clients place toplevel windows at absolute
+    coordinates, so positions reported for those windows are not meaningful
+    and must not be persisted.
+    """
+    display = Gdk.Display.get_default()
+    return display is not None and 'wayland' in type(display).__name__.lower()
+
 import gettext
 gettext.install("sticky", "/usr/share/locale", names="ngettext")
 
@@ -132,6 +142,7 @@ class Note(Gtk.Window):
         title = info.get('title', '')
         self.cached_text = info.get('text', '')
         self.color = info.get('color', self.app.settings.get_string('default-color'))
+        self.locked = info.get('locked', False)
 
         super(Note, self).__init__(
             skip_taskbar_hint=True,
@@ -199,6 +210,14 @@ class Note(Gtk.Window):
         close_button.set_tooltip_text(_("Delete Note"))
         self.title_bar.pack_end(close_button, False, False, 0)
 
+        self.lock_icon = Gtk.Image.new_from_icon_name('sticky-lock', Gtk.IconSize.BUTTON)
+        self.unlock_icon = Gtk.Image.new_from_icon_name('sticky-unlock', Gtk.IconSize.BUTTON)
+        self.lock_button = Gtk.Button(image=self.lock_icon if self.locked else self.unlock_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
+        self.lock_button.connect('clicked', self.on_lock_toggle, self)
+        self.lock_button.connect('button-press-event', self.on_title_click)
+        self.lock_button.set_tooltip_text(_("Lock/Unlock Edit"))
+        self.title_bar.pack_end(self.lock_button, False, False, 0)
+
         add_icon = Gtk.Image.new_from_icon_name('sticky-add', Gtk.IconSize.BUTTON)
         add_button = Gtk.Button(image=add_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
         add_button.connect('clicked', self.app.new_note, self)
@@ -230,6 +249,8 @@ class Note(Gtk.Window):
         self.view.connect('populate-popup', lambda w, p: self.add_context_menu_items(p))
         self.view.connect('key-press-event', self.on_key_press)
         self.view_style_manager = XApp.StyleManager(widget=self.view)
+        self.view.set_cursor_visible(not self.locked)
+        self.view.set_editable(not self.locked)
 
         scroll = Gtk.ScrolledWindow()
         self.add(scroll)
@@ -259,17 +280,27 @@ class Note(Gtk.Window):
             self.showing = False
             return
 
-        (new_x, new_y) = self.get_position()
+        changed = False
         (new_width, new_height) = self.get_size()
-        if self.x == new_x and self.y == new_y and self.height == new_height and self.width == new_width:
-            return
+        if running_under_wayland():
+            # On Wayland the compositor controls window placement: the position
+            # returned by get_position() is the same meaningless value for every
+            # window, so only track the size (which is actually honored).
+            if new_width != self.width or new_height != self.height:
+                self.width = new_width
+                self.height = new_height
+                changed = True
+        else:
+            (new_x, new_y) = self.get_position()
+            if self.x != new_x or self.y != new_y or self.width != new_width or self.height != new_height:
+                self.x = new_x
+                self.y = new_y
+                self.width = new_width
+                self.height = new_height
+                changed = True
 
-        self.x = new_x
-        self.y = new_y
-        self.height = new_height
-        self.width = new_width
-
-        self.queue_update()
+        if changed:
+            self.queue_update()
 
     def on_show(self, *args):
         self.showing = True
@@ -399,7 +430,8 @@ class Note(Gtk.Window):
             'width': self.width,
             'color': self.color,
             'title': self.title.get_text(),
-            'text': self.cached_text
+            'text': self.cached_text,
+            'locked': self.locked
         }
 
         return info
@@ -599,6 +631,15 @@ class Note(Gtk.Window):
             self.emit('update')
 
         return Gdk.EVENT_STOP
+
+    def on_lock_toggle(self, *args):
+        # locked = not editable
+        self.locked = self.view.get_editable()
+        self.view.set_editable(not self.locked)
+        self.view.set_cursor_visible(not self.locked)
+        self.lock_button.set_image(self.lock_icon if self.locked else self.unlock_icon)
+
+        self.emit('update')
 
 class SettingsWindow(XApp.PreferencesWindow):
     def __init__(self, app):
