@@ -7,12 +7,12 @@ version: 1
 
 script:
   - apt-get update
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential gettext python3 python3-pip
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential gettext python3 python3-pip squashfs-tools
   - python3 -m pip install --upgrade meson ninja
   - rm -rf AppDir build
   - meson setup build --prefix=/usr
   - ninja -C build
-  - DESTDIR=$PWD/AppDir ninja -C build install
+  - DESTDIR=$TARGET_APPDIR ninja -C build install
   - rm -rf build
 
 AppDir:
@@ -71,7 +71,7 @@ AppDir:
   # GSettings needs a compiled schema cache; glib looks it up through
   # XDG_DATA_DIRS, which the generated runtime sets to $APPDIR/usr/share.
   after_bundle:
-    - glib-compile-schemas $PWD/AppDir/usr/share/glib-2.0/schemas
+    - glib-compile-schemas $TARGET_APPDIR/usr/share/glib-2.0/schemas
 
   runtime:
     env:
