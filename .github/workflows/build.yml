@@ -11,17 +11,69 @@ on:
   issue_comment:
     types: [created]
 
-jobs:
-  build:
-    if: github.event_name != 'issue_comment'
-    uses: linuxmint/github-actions/.github/workflows/do-builds.yml@master
-    with:
-      commit_id: master
-      dependencies:
-      upload_artifacts: true
-      artifact_retention_days: 1
+# Releasing deletes and recreates the version tag, so overlapping runs on the
+# same branch must not race each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
-  build-ubuntu:
+jobs:
+  # Build .deb packages for Linux Mint and LMDE using the official build images.
+  # The upstream linuxmint/github-actions reusable workflows always publish a
+  # per-distro release named master.<mint_version>; building here instead lets
+  # every platform be published from a single versioned release.
+  build-mint:
+    if: github.event_name != 'issue_comment'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mint_version: mint22
+            image: linuxmintd/mint22.3-amd64
+          - mint_version: lmde7
+            image: linuxmintd/lmde7-amd64
+          - mint_version: mint27
+            image: linuxmintd/mint27-amd64
+    container:
+      image: ${{ matrix.image }}
+      # Disable seccomp until the container manager recognizes clone3(),
+      # <https://github.com/actions/virtual-environments/issues/3812>.
+      options: --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update build environment
+        run: |
+          echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+          sudo apt-get update
+          sudo apt-get -y dist-upgrade
+          sudo apt-get install -y python-is-python3
+        shell: bash
+      - name: Install first-class dependencies
+        uses: linuxmint/github-actions/install-deps@master
+        with:
+          mint_version: ${{ matrix.mint_version }}
+          dependencies:
+      - name: Build
+        uses: linuxmint/github-actions/real-build@master
+      - name: Isolate packages
+        run: |
+          mkdir -p ./output/packages
+          mv ../*.changes ./output
+          mv ../*.*deb ./output/packages
+        shell: bash
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.mint_version }}
+          path: |
+            output/packages/*
+            output/*.changes
+          retention-days: 1
+
+  # Build .deb packages for stock Ubuntu and Debian amd64 (the Mint images above
+  # do not cover these releases).
+  build-other:
     if: github.event_name != 'issue_comment'
     runs-on: ubuntu-latest
     strategy:
@@ -57,6 +109,47 @@ jobs:
           name: deb-${{ matrix.version }}
           path: |
             sticky_*
+          retention-days: 1
+
+  # Publish every platform's build output in a single versioned release.
+  release:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    needs: [build-mint, build-other]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version
+        id: v
+        run: |
+          VER=$(dpkg-parsechangelog | awk '/^Version:/ {print $2}' | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect assets
+        run: |
+          # Every platform ships the same file names, so prefix each with its
+          # artifact name to keep them apart in the release.
+          mkdir -p dist
+          for dir in artifacts/*/; do
+            prefix=$(basename "$dir")
+            while IFS= read -r -d '' file; do
+              cp "$file" "dist/${prefix}_$(basename "$file")"
+            done < <(find "$dir" -type f -print0)
+          done
+          ls -la dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.v.outputs.version }}"
+          gh release delete "$TAG" -y --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" \
+            --title "sticky ${{ steps.v.outputs.version }}" \
+            --notes "sticky ${{ steps.v.outputs.version }}" \
+            --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
 
   generate-test-packages:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request
@@ -68,36 +161,3 @@ jobs:
       comment_id: ${{ github.event.comment.id }}
       issue_number: ${{ github.event.issue.number }}
       dependencies:
-  release-aggregate:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [build, build-ubuntu]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Get version
-        id: v
-        run: |
-          VER=$(dpkg-parsechangelog | awk '/^Version:/ {print $2}' | head -1)
-          echo "version=$VER" >> $GITHUB_OUTPUT
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: List artifacts
-        run: |
-          ls -la dist/ || true
-          echo "COUNT=$(ls dist/ 2>/dev/null | wc -l)"
-      - name: Create release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VER=${{ steps.v.outputs.version }}
-          TAG="v${VER}"
-          gh release delete "$TAG" -y --cleanup-tag --repo luyanfeng/sticky || true
-          sleep 5
-          find dist -type f -print0 | xargs -0 gh release create "$TAG" --title "sticky v${VER}" --notes "Release v${VER}" --repo luyanfeng/sticky 2>&1 | tee gh_release.log
-
