@@ -17,12 +17,10 @@ jobs:
     uses: linuxmint/github-actions/.github/workflows/do-builds.yml@master
     with:
       commit_id: master
-      ############################## Comma separated list - like 'linuxmint/xapp, linuxmint/cinnamon-desktop'
       dependencies:
-      ##############################
+      upload_artifacts: true
+      artifact_retention_days: 1
 
-  # Build .deb packages for stock Ubuntu amd64 - the do-builds workflow above
-  # only targets Linux Mint and LMDE build images.
   build-ubuntu:
     if: github.event_name != 'issue_comment'
     runs-on: ubuntu-latest
@@ -34,65 +32,32 @@ jobs:
             image: ubuntu:24.04
           - version: "26.04"
             image: ubuntu:26.04
+          - version: "trixie"
+            image: debian:trixie
     container:
       image: ${{ matrix.image }}
     steps:
-      - name: Install git
+      - name: Install git & ca-certs
         run: |
           apt-get update
           apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
-      - name: Install build dependencies
+      - name: Install build deps
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential debhelper dh-python dpkg-dev gettext meson python3
-      - name: Build .deb package
+      - name: Build .deb
         run: dpkg-buildpackage --no-sign
-      - name: List build output
-        run: ls -la ..
       - name: Stage artifacts
         run: cp ../sticky_* .
-      - name: Upload .deb artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sticky-ubuntu-${{ matrix.version }}-amd64
+          name: deb-${{ matrix.version }}
           path: |
             sticky_*
 
-      - name: Install gh cli
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates jq
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
-          apt-get update
-          apt-get install -y --no-install-recommends gh
-
-      - name: Delete existing release/tag (if any)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="master.ubuntu${{ matrix.version }}"
-          gh release delete "$TAG" -y --cleanup-tag --repo luyanfeng/sticky || true
-
-      - name: Wait a few moments...
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: sleep 5
-
-      - name: Create release and upload assets
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="master.ubuntu${{ matrix.version }}"
-          TITLE="master (Ubuntu ${{ matrix.version }} amd64)"
-          gh release create "$TAG" --title "$TITLE" --notes "Build for Ubuntu ${{ matrix.version }} (amd64)" --repo luyanfeng/sticky sticky_* 2>&1 | tail -15
-
-  # Generate test packages when /generate-test-packages is commented on a PR
   generate-test-packages:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request
     uses: linuxmint/github-actions/.github/workflows/generate-test-packages.yml@master
@@ -102,5 +67,32 @@ jobs:
       comment_user: ${{ github.event.comment.user.login }}
       comment_id: ${{ github.event.comment.id }}
       issue_number: ${{ github.event.issue.number }}
-      ############################## Comma separated list - like 'linuxmint/xapp, linuxmint/cinnamon-desktop'
       dependencies:
+  release-aggregate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build, build-ubuntu]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version
+        id: v
+        run: |
+          VER=$(dpkg-parsechangelog | awk '/^Version:/ {print $2}' | head -1)
+          echo "version=$VER" >> $GITHUB_OUTPUT
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: List
+        run: ls -la dist/
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=${{ steps.v.outputs.version }}
+          TAG="v${VER}"
+          gh release delete "$TAG" -y --cleanup-tag --repo luyanfeng/sticky || true
+          sleep 5
+          gh release create "$TAG" --title "sticky v${VER}" --notes "Release v${VER}" --repo luyanfeng/sticky dist/* 2>&1 | tail -10
+
