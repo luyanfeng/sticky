@@ -1,16 +1,8 @@
 #!/bin/bash
 
-# Note positioning relies on the X11 backend. That backend works natively
-# under Xorg sessions and under Wayland via XWayland, so force it whenever an
-# X display is available. On Wayland sessions without XWayland there is no
-# DISPLAY; let GTK pick the native backend instead - sticky.py then refuses
-# to persist compositor-controlled window positions.
-if [ -n "${DISPLAY:-}" ]; then
-    export GDK_BACKEND="x11"
-fi
-
 # Resolve the script from this launcher's own location so the app also runs
 # from a relocatable bundle (AppImage) instead of an absolute /usr path.
+# The X11/Wayland backend choice is handled by sticky.py.
 BINDIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 exec python3 "$BINDIR/../lib/sticky/sticky.py" "$@"

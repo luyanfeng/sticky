@@ -23,8 +23,10 @@ AppDir:
     name: sticky
     icon: sticky
     version: !ENV ${APP_VERSION}
-    exec: usr/bin/sticky
-    exec_args: "$@"
+    # appimage-builder requires an ELF binary here, so start the bundled
+    # interpreter and point it at the application script.
+    exec: usr/bin/python3
+    exec_args: "$APPDIR/usr/lib/sticky/sticky.py $@"
 
   apt:
     arch: amd64
@@ -66,14 +68,18 @@ AppDir:
       - usr/share/help
       - usr/share/locale-langpack
 
+  # GSettings needs a compiled schema cache; glib looks it up through
+  # XDG_DATA_DIRS, which the generated runtime sets to $APPDIR/usr/share.
+  after_bundle:
+    - glib-compile-schemas $PWD/AppDir/usr/share/glib-2.0/schemas
+
   runtime:
     env:
-      PATH: '${APPDIR}/usr/bin:${PATH}'
-      APPDIR_LIBRARY_PATH: '${APPDIR}/usr/lib/x86_64-linux-gnu:${APPDIR}/usr/lib'
-      PYTHONHOME: '${APPDIR}/usr'
+      # The runtime already sets PATH, XDG_DATA_DIRS and APPDIR_LIBRARY_PATH.
+      # dist-packages is not on the bundled interpreter's default search path
+      # and the typelib directory is not auto-detected, so set both here.
       PYTHONPATH: '${APPDIR}/usr/lib/python3/dist-packages'
       GI_TYPELIB_PATH: '${APPDIR}/usr/lib/x86_64-linux-gnu/girepository-1.0'
-      XDG_DATA_DIRS: '${APPDIR}/usr/share:/usr/share'
 
 AppImage:
   arch: x86_64

@@ -4,6 +4,14 @@ import json
 import os
 import sys
 
+# Note positioning relies on the X11 backend, which works under Xorg sessions
+# and under Wayland via XWayland. When an X display is available force that
+# backend; on Wayland sessions without XWayland there is no DISPLAY, so let GDK
+# pick the native backend and running_under_wayland() keeps positions out of
+# the configuration. Must run before Gdk opens a display.
+if os.environ.get('DISPLAY'):
+    os.environ['GDK_BACKEND'] = 'x11'
+
 import gi
 gi.require_version('Gdk', '3.0')
 gi.require_version('Gspell', '1')
