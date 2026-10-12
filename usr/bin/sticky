@@ -9,4 +9,8 @@ if [ -n "${DISPLAY:-}" ]; then
     export GDK_BACKEND="x11"
 fi
 
-/usr/lib/sticky/sticky.py $*
+# Resolve the script from this launcher's own location so the app also runs
+# from a relocatable bundle (AppImage) instead of an absolute /usr path.
+BINDIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+exec python3 "$BINDIR/../lib/sticky/sticky.py" "$@"

@@ -7,6 +7,11 @@ import re
 
 from gi.repository import Gio, GLib, GObject, Gtk
 
+# Locate the installed data directory relative to this file so the app also
+# works from a relocatable bundle (AppImage), not only from an absolute /usr.
+_APP_DIR = os.path.dirname(os.path.realpath(__file__))
+SHARE_DIR = os.path.join(os.path.dirname(os.path.dirname(_APP_DIR)), 'share', 'sticky')
+
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), 'sticky')
 CONFIG_PATH = os.path.join(CONFIG_DIR, 'notes.json')
 SAVE_DELAY = 3

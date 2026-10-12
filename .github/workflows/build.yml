@@ -29,11 +29,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - mint_version: mint22
+          - distro: mint22
             image: linuxmintd/mint22.3-amd64
-          - mint_version: lmde7
+          - distro: lmde7
             image: linuxmintd/lmde7-amd64
-          - mint_version: mint27
+          - distro: mint27
             image: linuxmintd/mint27-amd64
     container:
       image: ${{ matrix.image }}
@@ -52,23 +52,20 @@ jobs:
       - name: Install first-class dependencies
         uses: linuxmint/github-actions/install-deps@master
         with:
-          mint_version: ${{ matrix.mint_version }}
+          mint_version: ${{ matrix.distro }}
           dependencies:
       - name: Build
         uses: linuxmint/github-actions/real-build@master
       - name: Isolate packages
         run: |
           mkdir -p ./output/packages
-          mv ../*.changes ./output
           mv ../*.*deb ./output/packages
         shell: bash
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ matrix.mint_version }}
-          path: |
-            output/packages/*
-            output/*.changes
+          name: ${{ matrix.distro }}
+          path: output/packages/*
           retention-days: 1
 
   # Build .deb packages for stock Ubuntu and Debian amd64 (the Mint images above
@@ -80,11 +77,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - version: "24.04"
+          - distro: ubuntu24.04
             image: ubuntu:24.04
-          - version: "26.04"
+          - distro: ubuntu26.04
             image: ubuntu:26.04
-          - version: "trixie"
+          - distro: debian13
             image: debian:trixie
     container:
       image: ${{ matrix.image }}
@@ -102,19 +99,42 @@ jobs:
       - name: Build .deb
         run: dpkg-buildpackage --no-sign
       - name: Stage artifacts
-        run: cp ../sticky_* .
+        run: cp ../sticky_*.deb .
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deb-${{ matrix.version }}
-          path: |
-            sticky_*
+          name: ${{ matrix.distro }}
+          path: sticky_*.deb
+          retention-days: 1
+
+  # Build a portable AppImage.
+  build-appimage:
+    if: github.event_name != 'issue_comment'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version
+        id: v
+        run: |
+          VER=$(dpkg-parsechangelog | awk '/^Version:/ {print $2}' | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: Build AppImage
+        uses: AppImageCrafters/build-appimage@master
+        env:
+          APP_VERSION: ${{ steps.v.outputs.version }}
+        with:
+          recipe: AppImageBuilder.yml
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: '*.AppImage'
           retention-days: 1
 
   # Publish every platform's build output in a single versioned release.
   release:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
-    needs: [build-mint, build-other]
+    needs: [build-mint, build-other, build-appimage]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -129,13 +149,18 @@ jobs:
           path: artifacts
       - name: Collect assets
         run: |
-          # Every platform ships the same file names, so prefix each with its
-          # artifact name to keep them apart in the release.
+          # Debs all share the same sticky_<version>_<arch>.deb name, so rename
+          # each to <distro>_<version>_<arch>.deb and keep only debs and the
+          # AppImage (no .dsc/.changes/.buildinfo).
           mkdir -p dist
           for dir in artifacts/*/; do
             prefix=$(basename "$dir")
             while IFS= read -r -d '' file; do
-              cp "$file" "dist/${prefix}_$(basename "$file")"
+              base=$(basename "$file")
+              case "$base" in
+                *.deb)      cp "$file" "dist/${prefix}_${base#sticky_}" ;;
+                *.AppImage) cp "$file" "dist/$base" ;;
+              esac
             done < <(find "$dir" -type f -print0)
           done
           ls -la dist

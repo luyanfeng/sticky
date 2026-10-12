@@ -15,7 +15,7 @@ from xapp.GSettingsWidgets import *
 
 from note_buffer import NoteBuffer
 from manager import NotesManager
-from common import FileHandler, HoverBox, prompt, confirm
+from common import FileHandler, HoverBox, prompt, confirm, SHARE_DIR
 from util import gnote_to_internal_format
 
 def running_under_wayland():
@@ -29,10 +29,10 @@ def running_under_wayland():
     return display is not None and 'wayland' in type(display).__name__.lower()
 
 import gettext
-gettext.install("sticky", "/usr/share/locale", names="ngettext")
+gettext.install("sticky", os.path.join(os.path.dirname(SHARE_DIR), 'locale'), names="ngettext")
 
 APPLICATION_ID = 'org.x.sticky'
-STYLE_SHEET_PATH = '/usr/share/sticky/sticky.css'
+STYLE_SHEET_PATH = os.path.join(SHARE_DIR, 'sticky.css')
 SCHEMA = 'org.x.sticky'
 DBUS_PATH = '/org/x/sticky'
 DBUS_INTERFACE_XML = '''
