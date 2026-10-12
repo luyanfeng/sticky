@@ -60,6 +60,38 @@ jobs:
           path: |
             sticky_*
 
+      - name: Install gh cli
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates jq
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+          apt-get update
+          apt-get install -y --no-install-recommends gh
+
+      - name: Delete existing release/tag (if any)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="master.ubuntu${{ matrix.version }}"
+          gh release delete "$TAG" -y --cleanup-tag || true
+
+      - name: Wait a few moments...
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: sleep 5
+
+      - name: Create release and upload assets
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="master.ubuntu${{ matrix.version }}"
+          TITLE="master (Ubuntu ${{ matrix.version }} amd64)"
+          gh release create "$TAG" --title "$TITLE" --notes "Build for Ubuntu ${{ matrix.version }} (amd64)" sticky_* 2>&1 | tail -15
+
   # Generate test packages when /generate-test-packages is commented on a PR
   generate-test-packages:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request
