@@ -28,6 +28,10 @@ AppDir:
 
   apt:
     arch: amd64
+    # The container keyring only trusts Ubuntu 20.04 but the packages come from
+    # 22.04 (XApp >= 2.2 is required for XApp.StyleManager), so skip signature
+    # verification for these well-known archive URLs.
+    allow_unauthenticated: true
     sources:
       - sourceline: 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main universe'
       - sourceline: 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy-updates main universe'
