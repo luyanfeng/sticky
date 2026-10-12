@@ -74,6 +74,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Get version
         id: v
         run: |
@@ -84,15 +86,18 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: List
-        run: ls -la dist/
+      - name: List artifacts
+        run: |
+          ls -la dist/ || true
+          echo "COUNT=$(ls dist/ 2>/dev/null | wc -l)"
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VER=${{ steps.v.outputs.version }}
           TAG="v${VER}"
           gh release delete "$TAG" -y --cleanup-tag --repo luyanfeng/sticky || true
           sleep 5
-          gh release create "$TAG" --title "sticky v${VER}" --notes "Release v${VER}" --repo luyanfeng/sticky dist/* 2>&1 | tail -10
+          gh release create "$TAG" --title "sticky v${VER}" --notes "Release v${VER}" --repo luyanfeng/sticky dist/* 2>&1 | tee gh_release.log
 
