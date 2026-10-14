@@ -63,10 +63,44 @@ AppDir:
 
   files:
     exclude:
+      # Documentation and packaging metadata.
       - usr/share/doc
       - usr/share/man
+      - usr/share/info
+      - usr/share/lintian
+      - usr/share/gdb
+      - usr/share/bug
+      - usr/share/pkgconfig
       - usr/share/help
       - usr/share/locale-langpack
+      # Emacs, dictionary and system service leftovers, unused by the app.
+      - usr/share/dict
+      - usr/share/dictionaries-common
+      - usr/share/emacsen-common
+      - usr/lib/emacsen-common
+      - usr/share/mate-panel
+      - usr/share/upstart
+      - usr/share/pam-configs
+      - usr/share/session-migration
+      - usr/share/binfmts
+      - usr/lib/binfmt.d
+      - usr/lib/systemd
+      - usr/lib/sysusers.d
+      - usr/lib/tmpfiles.d
+      - usr/lib/valgrind
+      # Perl is only pulled in as a dependency and is not used by the app.
+      - usr/bin/perl*
+      - usr/lib/x86_64-linux-gnu/perl*
+      - usr/share/perl*
+      # Icon themes pulled in by adwaita-icon-theme but not used by the app.
+      # They are PNGs, so they do not shrink under compression.
+      - usr/share/icons/Humanity
+      - usr/share/icons/Humanity-Dark
+      - usr/share/icons/ubuntu-mono-dark
+      - usr/share/icons/ubuntu-mono-light
+      - usr/share/icons/LoginIcons
+      # X11 keyboard layout data, only used by keyboard-configuration tooling.
+      - usr/share/X11/xkb
 
   # GSettings needs a compiled schema cache; glib looks it up through
   # XDG_DATA_DIRS, which the generated runtime sets to $APPDIR/usr/share.
