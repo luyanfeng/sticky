@@ -3,13 +3,47 @@
 import os
 import sys
 
-# Note positioning relies on the X11 backend, which works under Xorg sessions
-# and under Wayland via XWayland. When an X display is available force that
-# backend; on Wayland sessions without XWayland there is no DISPLAY, so let GDK
-# pick the native backend and running_under_wayland() keeps positions out of
-# the configuration. Must run before Gdk opens a display.
-if os.environ.get('DISPLAY'):
-    os.environ['GDK_BACKEND'] = 'x11'
+# Pick the GDK backend before Gdk opens a display.
+#
+# The native Wayland backend is preferred, but Wayland has no notion of
+# workspaces, so "show notes on all desktops" (GDK_WINDOW_STATE_STICKY) can
+# only be honoured through XWayland, where the option maps to
+# _NET_WM_STATE_STICKY. When that setting is on and XWayland is available, use
+# the X11 backend so the feature actually works. STICKY_BACKEND overrides the
+# choice with 'wayland' or 'x11'.
+def _select_gdk_backend():
+    requested = os.environ.get('STICKY_BACKEND', '').strip().lower()
+    if requested in ('wayland', 'x11'):
+        return requested
+
+    on_wayland = bool(os.environ.get('WAYLAND_DISPLAY')) or \
+        os.environ.get('XDG_SESSION_TYPE') == 'wayland'
+    has_x11 = bool(os.environ.get('DISPLAY'))
+
+    if on_wayland and has_x11 and _wants_all_desktops():
+        return 'x11'
+
+    if on_wayland:
+        return 'wayland'
+
+    if has_x11:
+        return 'x11'
+
+    return None
+
+def _wants_all_desktops():
+    """Whether notes are configured to show on every desktop."""
+    try:
+        import gi
+        gi.require_version('Gio', '2.0')
+        from gi.repository import Gio
+        return Gio.Settings.new('org.x.sticky').get_boolean('desktop-window-state')
+    except Exception:
+        return False
+
+_backend = _select_gdk_backend()
+if _backend:
+    os.environ['GDK_BACKEND'] = _backend
 
 import gi
 gi.require_version('Gdk', '3.0')
@@ -407,6 +441,9 @@ class Note(Gtk.Window):
         # for some reason, the ABOVE flag is never actually being set, even when it should be
         # self.is_pinned = event.new_window_state & Gdk.WindowState.ABOVE
 
+        if running_under_wayland():
+            return
+
         # present_with_time() and the compositor can drop a stick request made
         # before the window was mapped, so re-assert it whenever the state
         # reports otherwise. A manual choice from the title menu sets
@@ -421,6 +458,11 @@ class Note(Gtk.Window):
         # manual override.
         if len(args) == 2:
             self.desktop_state_override = False
+
+        # "Show notes on all desktops" has no meaning on Wayland, which has no
+        # workspaces.
+        if running_under_wayland():
+            return
 
         if self.get_mapped():
             if self.app.settings.get_boolean('desktop-window-state'):
@@ -515,26 +557,29 @@ class Note(Gtk.Window):
         if is_title:
             popup.append(Gtk.SeparatorMenuItem(visible=True))
 
-            if self.is_stuck:
-                label = _("Only on This Workspace")
+            # Wayland has no workspaces and does not let clients keep a window
+            # above others, so these options do nothing there.
+            if not running_under_wayland():
+                if self.is_stuck:
+                    label = _("Only on This Workspace")
+                    def on_activate(*args):
+                        self.set_desktop_state_override(False)
+                else:
+                    label = _("Always on Visible Workspace")
+                    def on_activate(*args):
+                        self.set_desktop_state_override(True)
+
+                stick_menu_item = Gtk.MenuItem(label=label, visible=True)
+                stick_menu_item.connect('activate', on_activate)
+                popup.append(stick_menu_item)
+
                 def on_activate(*args):
-                    self.set_desktop_state_override(False)
-            else:
-                label = _("Always on Visible Workspace")
-                def on_activate(*args):
-                    self.set_desktop_state_override(True)
+                    self.set_keep_above(not self.is_pinned)
+                    self.is_pinned = not self.is_pinned
 
-            stick_menu_item = Gtk.MenuItem(label=label, visible=True)
-            stick_menu_item.connect('activate', on_activate)
-            popup.append(stick_menu_item)
-
-            def on_activate(*args):
-                self.set_keep_above(not self.is_pinned)
-                self.is_pinned = not self.is_pinned
-
-            pin_menu_item = Gtk.CheckMenuItem(active=self.is_pinned, label=_("Always on Top"), visible=True)
-            pin_menu_item.connect('activate', on_activate)
-            popup.append(pin_menu_item)
+                pin_menu_item = Gtk.CheckMenuItem(active=self.is_pinned, label=_("Always on Top"), visible=True)
+                pin_menu_item.connect('activate', on_activate)
+                popup.append(pin_menu_item)
 
     def create_format_menu(self, color_button, text_button):
 
@@ -657,7 +702,7 @@ class Note(Gtk.Window):
             self.app.settings.disconnect(self.title_height_id)
             self.title_height_id = 0
 
-        if self.changed_timer_id:
+        if getattr(self, 'changed_timer_id', 0):
             GLib.source_remove(self.changed_timer_id)
             self.changed_timer_id = 0
 
@@ -813,6 +858,7 @@ class Application(Gtk.Application):
         self.autostart_mode = False # indicates if we're in autostart mode
         self.dbus_register_id = 0
         self.group_buttons = {}
+        self.all_desktops_warned = False
 
         self.add_main_option(
             'autostart',
@@ -1106,11 +1152,31 @@ class Application(Gtk.Application):
 
         self.dummy_window.move(-2, -2)
 
-        # stick()/unstick() only take effect once the window is mapped.
+        # Workspaces do not exist on Wayland: "show notes on all desktops" can
+        # only work through XWayland, which is selected at startup. If the user
+        # turns it on now, tell them a restart is needed instead of failing
+        # silently.
+        if running_under_wayland():
+            if self.settings.get_boolean('desktop-window-state'):
+                self.warn_all_desktops_needs_xwayland()
+            return
+
         if self.settings.get_boolean('desktop-window-state'):
             self.dummy_window.stick()
         else:
             self.dummy_window.unstick()
+
+    def warn_all_desktops_needs_xwayland(self):
+        if self.all_desktops_warned or not os.environ.get('DISPLAY'):
+            return
+
+        self.all_desktops_warned = True
+
+        message = Gtk.MessageDialog(
+            text=_("Notes on all desktops needs the X11 backend. Restart the application to apply it."),
+            buttons=Gtk.ButtonsType.CLOSE, transient_for=self.dummy_window)
+        message.run()
+        message.destroy()
 
     def activate_notes(self, time):
         for note in self.notes:
