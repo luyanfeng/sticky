@@ -7,12 +7,13 @@ version: 1
 
 script:
   - apt-get update
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential gettext python3 python3-pip squashfs-tools
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential gettext python3 python3-pip squashfs-tools libglib2.0-bin
   - python3 -m pip install --upgrade meson ninja
   - rm -rf AppDir build
   - meson setup build --prefix=/usr
   - ninja -C build
   - DESTDIR=$TARGET_APPDIR ninja -C build install
+  - sed -i "s/__DEB_VERSION__/${APP_VERSION}/g" $TARGET_APPDIR/usr/lib/sticky/sticky.py
   - rm -rf build
 
 AppDir:

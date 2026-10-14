@@ -1,5 +1,10 @@
 name: Build
 
+# Publishing releases needs a token that can write repository contents; the
+# default token is read-only in recent runner images.
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -133,7 +138,7 @@ jobs:
 
   # Publish every platform's build output in a single versioned release.
   release:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [build-mint, build-other, build-appimage]
     runs-on: ubuntu-latest
     steps:

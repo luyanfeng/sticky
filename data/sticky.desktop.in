@@ -5,6 +5,5 @@ Exec=sticky
 Icon=sticky
 Terminal=false
 Type=Application
-Encoding=UTF-8
-Categories=Application;Utility;
+Categories=Utility;
 StartupNotify=false

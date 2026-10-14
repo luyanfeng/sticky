@@ -4,6 +4,8 @@ import os
 import json
 import time
 import re
+import tempfile
+import traceback
 
 from gi.repository import Gio, GLib, GObject, Gtk
 
@@ -57,11 +59,56 @@ class FileHandler(GObject.Object):
         self.settings.connect('changed::backup-interval', self.check_backup)
         self.check_backup()
 
-    def load_notes(self, *args):
-        with open(CONFIG_PATH, 'r') as file:
-            info = json.loads(file.read())
+    def get_backup_files(self):
+        if not os.path.isdir(CONFIG_DIR):
+            return []
 
-        self.notes_lists = info
+        backups = []
+        for file in os.listdir(CONFIG_DIR):
+            if backup_file_name.search(file):
+                backups.append(file)
+
+        backups.sort()
+        return backups
+
+    def load_latest_backup(self):
+        backups = self.get_backup_files()
+        while backups:
+            path = os.path.join(CONFIG_DIR, backups.pop())
+            try:
+                with open(path, 'r') as file:
+                    return self.validate_notes_lists(json.loads(file.read()))
+            except (OSError, json.JSONDecodeError, ValueError):
+                traceback.print_exc()
+
+        return {}
+
+    def validate_notes_lists(self, info):
+        if not isinstance(info, dict):
+            raise ValueError('notes data is not a JSON object')
+
+        for group_name, notes in info.items():
+            if not isinstance(notes, list):
+                raise ValueError("group '%s' is not a list" % group_name)
+
+        return info
+
+    def load_notes(self, *args):
+        self.notes_lists = {}
+        try:
+            with open(CONFIG_PATH, 'r') as file:
+                info = json.loads(file.read())
+
+            self.notes_lists = self.validate_notes_lists(info)
+        except (OSError, json.JSONDecodeError, ValueError) as e:
+            traceback.print_exc()
+
+            self.notes_lists = self.load_latest_backup()
+
+            message = Gtk.MessageDialog(text=_("Unable to load notes: %s. The most recent backup was restored if one was available.") % e,
+                                        buttons=Gtk.ButtonsType.CLOSE, transient_for=self.window)
+            message.run()
+            message.destroy()
 
     def get_note_list(self, group_name):
         return self.notes_lists[group_name]
@@ -83,8 +130,19 @@ class FileHandler(GObject.Object):
         self.save_timer_id = GLib.timeout_add_seconds(SAVE_DELAY, self.save_note_list)
 
     def save_to_file(self, file_path):
-        with open(file_path, 'w+') as file:
-            file.write(json.dumps(self.notes_lists, indent=4))
+        directory = os.path.dirname(file_path) or '.'
+        fd, temp_path = tempfile.mkstemp(dir=directory, prefix='.sticky-', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as file:
+                file.write(json.dumps(self.notes_lists, indent=4))
+                file.flush()
+                os.fsync(file.fileno())
+
+            os.replace(temp_path, file_path)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
 
     def save_note_list(self):
         self.save_timer_id = 0
@@ -147,9 +205,8 @@ class FileHandler(GObject.Object):
         self.check_backup()
 
     def delete_all_backups(self):
-        for file in os.listdir(CONFIG_DIR):
-            if backup_file_name.search(file):
-                os.remove(os.path.join(CONFIG_DIR, file))
+        for file in self.get_backup_files():
+            os.remove(os.path.join(CONFIG_DIR, file))
 
     def export_notes(self, menuitem, window):
         file_dialog = Gtk.FileChooserDialog(title=_("Export..."), action=Gtk.FileChooserAction.SAVE, transient_for=window)
@@ -216,12 +273,7 @@ class FileHandler(GObject.Object):
 
         content.pack_start(scrolled_window, True, True, 0)
 
-        backups = []
-        for file in os.listdir(CONFIG_DIR):
-            if backup_file_name.search(file):
-                backups.append(file)
-
-        backups.sort()
+        backups = self.get_backup_files()
 
         if len(backups) == 0:
             restore_button.set_sensitive(False)
@@ -236,8 +288,9 @@ class FileHandler(GObject.Object):
 
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
-            file_path = os.path.join(CONFIG_DIR, backup_list.get_selected_row().get_child().file)
-            if file_path is not None:
+            selected_row = backup_list.get_selected_row()
+            if selected_row is not None:
+                file_path = os.path.join(CONFIG_DIR, selected_row.get_child().file)
                 self.load_notes_from_path(file_path, window)
         elif response == 20:
             self.delete_all_backups()
@@ -249,14 +302,17 @@ class FileHandler(GObject.Object):
             with open(path, 'r') as file:
                 info = json.loads(file.read())
 
-            # todo: needs validation here to ensure the file type is correct, and while we're at it, the validation
-            # should really be added to load_notes() as well
+            self.validate_notes_lists(info)
+
+            # keep a safety copy of the current data before replacing it
+            self.save_backup()
 
             self.notes_lists = info
             self.save_note_list()
 
             self.emit('lists-changed')
-        except Exception as e:
+        except Exception:
+            traceback.print_exc()
             message = Gtk.MessageDialog(text=_("Unable to restore: invalid or corrupted backup file"),
                                         buttons=Gtk.ButtonsType.CLOSE, transient_for=window)
             message.run()
@@ -292,10 +348,16 @@ class FileHandler(GObject.Object):
         self.emit('lists-changed')
 
     def change_group_name(self, old_group, new_group):
+        if new_group != old_group and new_group in self.notes_lists:
+            if not confirm(_("Overwrite Existing Group"), _("There is already a group named '%s'. This action will overwrite it. Continue anyway?") % new_group, self.window):
+                return False
+
         self.notes_lists[new_group] = self.notes_lists.pop(old_group)
 
         self.save_note_list()
         self.emit('group-name-changed', old_group, new_group)
+
+        return True
 
 class HoverBox(Gtk.EventBox):
     def __init__(self, widget=None):
@@ -330,30 +392,7 @@ class HoverBox(Gtk.EventBox):
         else:
             self.child_widget.hide()
 
-def prompt(title, message, window):
-    dialog = Gtk.Dialog(title=title, transient_for=window, window_position=Gtk.WindowPosition.CENTER)
-    dialog.add_button(_("Cancel"), Gtk.ResponseType.CANCEL)
-    dialog.add_button(_("OK"), Gtk.ResponseType.OK)
-    dialog.set_default_response(Gtk.ResponseType.OK)
-
-    content = dialog.get_content_area()
-    content.props.margin_left = 20
-    content.props.margin_right = 20
-
-    content.pack_start(Gtk.Label(label=message), False, False, 10)
-    entry = Gtk.Entry(activates_default=True)
-    content.pack_start(entry, False, False, 10)
-
-    content.show_all()
-
-    response = dialog.run()
-    value = entry.get_text()
-
-    dialog.destroy()
-
-    return response == Gtk.ResponseType.OK, value
-
-def confirm(title, message, window=None, settings=None, disable_key=None, disable_inverted=False):
+def confirm(title, message, window=None, settings=None, disable_key=None):
     dialog = Gtk.Dialog(title=title, transient_for=window,
         window_position=(Gtk.WindowPosition.CENTER if window is None else Gtk.WindowPosition.CENTER_ON_PARENT))
     dialog.add_button(_("No"), Gtk.ResponseType.NO)
@@ -369,10 +408,7 @@ def confirm(title, message, window=None, settings=None, disable_key=None, disabl
     if disable_key is not None:
         disable_checkbox = Gtk.CheckButton.new_with_label(_("Don't ask me again"))
         content.pack_start(disable_checkbox, False, False, 0)
-        flags = Gio.SettingsBindFlags.DEFAULT
-        if disable_inverted:
-            flags |= Gio.SettingsBindFlags.INVERT_BOOLEAN
-        settings.bind(disable_key, disable_checkbox, 'active', flags)
+        settings.bind(disable_key, disable_checkbox, 'active', Gio.SettingsBindFlags.DEFAULT)
 
     content.show_all()
 

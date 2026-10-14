@@ -2,9 +2,9 @@
 
 import os
 
-from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango, XApp
+from gi.repository import Gdk, Gio, GObject, Gtk, Pango, XApp
 from note_buffer import NoteBuffer
-from common import HoverBox, SHARE_DIR
+from common import HoverBox, SHARE_DIR, confirm
 from util import clean_text
 
 NOTE_TARGETS = [Gtk.TargetEntry.new('note-entry', Gtk.TargetFlags.SAME_APP, 1)]
@@ -148,7 +148,7 @@ class GroupEntry(Gtk.ListBoxRow):
         label = Gtk.Label(label=self.item.name, halign=Gtk.Align.START, margin_start=5)
         self.box.pack_start(label, True, True, 5)
 
-        image = Gtk.Image.new_from_icon_name('xsi-document-edit-symbolic', Gtk.IconSize.BUTTON)
+        image = Gtk.Image.new_from_icon_name('document-edit-symbolic', Gtk.IconSize.BUTTON)
         button = Gtk.Button(image=image, relief=Gtk.ReliefStyle.NONE, name='manager-group-edit-button')
         self.box.pack_end(button, False, False, 2)
         button.connect('clicked', self.edit_group_name)
@@ -177,8 +177,8 @@ class GroupEntry(Gtk.ListBoxRow):
         group_name = self.entry.get_text()
         if group_name != '' and group_name != self.item.name:
             old_name = self.item.name
-            self.item.name = group_name
-            self.file_handler.change_group_name(old_name, group_name)
+            if self.file_handler.change_group_name(old_name, group_name):
+                self.item.name = group_name
 
         self.clean_up()
 
@@ -229,6 +229,7 @@ class NotesManager(object):
     def __init__(self, app, file_handler):
         self.app = app
         self.dragged_note = None
+        self.dragged_group = None
         self.search_model = Gio.ListStore()
 
         self.file_handler = file_handler
@@ -395,7 +396,7 @@ class NotesManager(object):
 
             for group_name in self.file_handler.get_note_group_names():
                 for note_info in self.file_handler.get_note_list(group_name):
-                    if note_info['title'].lower().find(search_text) != -1 or clean_text(note_info['text']).find(search_text) != -1:
+                    if (note_info.get('title') or '').lower().find(search_text) != -1 or clean_text(note_info.get('text') or '').find(search_text) != -1:
                         self.search_model.append(Note(note_info, group_name))
 
             self.note_view.bind_model(self.search_model, self.create_note_entry)
@@ -422,6 +423,8 @@ class NotesManager(object):
         dnd_wrapper = Gtk.EventBox(above_child=True)
         dnd_wrapper.drag_source_set(Gdk.ModifierType.BUTTON1_MASK, NOTE_TARGETS, Gdk.DragAction.MOVE)
         dnd_wrapper.connect('drag-begin', self.on_drag_begin)
+        dnd_wrapper.connect('drag-end', self.on_drag_end)
+        dnd_wrapper.connect('drag-failed', self.on_drag_failed)
         widget.add(dnd_wrapper)
 
         outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin=10, spacing=10)
@@ -519,16 +522,25 @@ class NotesManager(object):
         self.create_new_group(on_complete)
 
     def remove_note(self, *args):
-        notes = []
-        selected = self.get_selected_note()
-        for child in self.note_view.get_children():
-            if child.item.info != selected:
-                notes.append(child.item.info)
+        if (self.app.settings.get_boolean('disable-delete-confirm') or
+            confirm(_("Delete Note"), _("Are you sure you want to remove this note?"),
+                    self.window, self.app.settings, 'disable-delete-confirm')):
+            selected = self.note_view.get_selected_children()[0].item
+            group = selected.group_name
 
-        self.file_handler.update_note_list(notes, self.get_current_group())
+            notes = []
+            for note in self.file_handler.get_note_list(group):
+                if note is not selected.info:
+                    notes.append(note)
+
+            self.file_handler.update_note_list(notes, group)
+        else:
+            return
 
     def remove_group(self, *args):
         group_name = self.get_current_group()
+        if group_name is None:
+            return
 
         self.file_handler.remove_group(group_name)
 
@@ -543,41 +555,67 @@ class NotesManager(object):
         self.file_handler.update_note_list(notes, group)
 
     def on_drag_begin(self, widget, *args):
-        self.dragged_note = widget.get_parent().item.info
+        note = widget.get_parent().item
+        self.dragged_note = note.info
+        self.dragged_group = note.group_name
+
+    def on_drag_end(self, widget, *args):
+        self.dragged_note = None
+        self.dragged_group = None
+
+    def on_drag_failed(self, widget, result, *args):
+        self.dragged_note = None
+        self.dragged_group = None
+
+        return False
 
     def handle_drop(self, widget, context, x, y, time):
         new_group = widget.item.name
+        if self.dragged_note is None or new_group == self.dragged_group:
+            Gtk.drag_finish(context, False, False, time)
+            return
+
         new_list = self.file_handler.get_note_list(new_group)
         new_list.append(self.dragged_note)
 
-        old_group = self.get_current_group()
+        old_group = self.dragged_group
         old_list = self.file_handler.get_note_list(old_group)
-        old_list.remove(self.dragged_note)
+        try:
+            old_list.remove(self.dragged_note)
+        except ValueError:
+            pass
 
         self.file_handler.update_note_list(new_list, new_group)
         self.file_handler.update_note_list(old_list, old_group)
 
         self.dragged_note = None
+        self.dragged_group = None
 
         Gtk.drag_finish(context, True, False, time)
 
     def handle_new_group_drop(self, widget, context, x, y, time):
-        old_group = self.get_current_group()
+        if self.dragged_note is None:
+            Gtk.drag_finish(context, False, False, time)
+            return
+
+        dragged_note = self.dragged_note
+        old_group = self.dragged_group
         old_list = self.file_handler.get_note_list(old_group)
 
         def on_created(group_name, success):
             if not success:
                 group_name = old_group
             else:
-                old_list.remove(self.dragged_note)
+                try:
+                    old_list.remove(dragged_note)
+                except ValueError:
+                    pass
 
                 new_list = self.file_handler.get_note_list(group_name)
-                new_list.append(self.dragged_note)
+                new_list.append(dragged_note)
 
                 self.file_handler.update_note_list(new_list, group_name)
                 self.file_handler.update_note_list(old_list, old_group)
-
-            self.dragged_note = None
 
             for row in self.group_list.get_children():
                 if row.item.name == group_name:

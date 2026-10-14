@@ -1,4 +1,4 @@
-project('sticky', version : '1.32', meson_version : '>= 0.49.0')
+project('sticky', version : '1.34', meson_version : '>= 0.49.0')
 
 i18n = import('i18n')
 
@@ -15,6 +15,6 @@ subdir('data')
 subdir('po')
 
 install_subdir('etc', install_dir: sysconfdir, strip_directory: true)
-install_subdir('usr', install_dir: prefix, strip_directory: true)
+install_subdir('usr', install_dir: prefix, strip_directory: true, exclude_directories: ['lib/sticky/__pycache__'])
 
 meson.add_install_script('meson/meson-postinstall.sh')

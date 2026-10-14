@@ -1,3 +1,16 @@
+sticky (1.34) alfa; urgency=medium
+
+  * Fix a crash when searching if a note has no title.
+  * Remove the selected note from its own group when deleting from the
+    search results.
+  * Ask for confirmation before deleting a note from the manager.
+  * Save notes.json atomically and recover from a damaged file.
+  * Keep notes on all desktops after a note is shown again.
+  * Use icons that exist in the standard icon themes.
+  * Miscellaneous packaging and metadata fixes.
+
+ -- luyanfeng <e0110324@ceic.com>  Wed, 14 Oct 2026 09:22:46 +0800
+
 sticky (1.33) alfa; urgency=medium
 
   * Notes preferences: add a "Title bar height" option to adjust the height of

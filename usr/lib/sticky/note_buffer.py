@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from gi.repository import Gdk, GLib, GObject, Gtk, Pango
-from util import ends_with_url, get_url_start
+from util import get_url_start
 
 TAG_DEFINITIONS = {
     'bold': {'weight': Pango.Weight.BOLD},
@@ -844,7 +844,7 @@ class NoteBuffer(Gtk.TextBuffer):
     def add_bullet(self, a_iter):
         with self.internal_action():
             anchor = self.create_child_anchor(a_iter)
-            bullet = Gtk.Image(visible=True, icon_name='menu-bullet', pixel_size=16)
+            bullet = Gtk.Image(visible=True, icon_name='view-list-bullet-symbolic', pixel_size=16)
             self.view.add_child_at_anchor(bullet, anchor)
 
             return ObjectInsertAction(self, anchor)
@@ -955,6 +955,3 @@ class NoteBuffer(Gtk.TextBuffer):
     def on_mark_set(self, b, l, mark):
         if mark.get_name() == 'insert':
             self.tag_toggles = []
-
-    def test(self):
-        print(ends_with_url(self.get_text(*self.get_bounds(), False)))

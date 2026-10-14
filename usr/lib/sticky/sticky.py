@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-import json
 import os
 import sys
 
@@ -17,13 +16,13 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Gspell', '1')
 gi.require_version('Gtk', '3.0')
 gi.require_version('XApp', '1.0')
-from gi.repository import Gdk, Gio, GObject, Gspell, Gtk, Pango, XApp
+from gi.repository import Gdk, Gio, GObject, Gspell, Gtk, XApp
 
 from xapp.GSettingsWidgets import *
 
 from note_buffer import NoteBuffer
 from manager import NotesManager
-from common import FileHandler, HoverBox, prompt, confirm, SHARE_DIR
+from common import FileHandler, HoverBox, confirm, SHARE_DIR
 from util import gnote_to_internal_format
 
 def running_under_wayland():
@@ -37,7 +36,7 @@ def running_under_wayland():
     return display is not None and 'wayland' in type(display).__name__.lower()
 
 import gettext
-gettext.install("sticky", os.path.join(os.path.dirname(SHARE_DIR), 'locale'), names="ngettext")
+gettext.install("sticky", os.path.join(os.path.dirname(SHARE_DIR), 'locale'), names=["ngettext"])
 
 APPLICATION_ID = 'org.x.sticky'
 STYLE_SHEET_PATH = os.path.join(SHARE_DIR, 'sticky.css')
@@ -147,6 +146,7 @@ class Note(Gtk.Window):
         self.is_pinned = False
         self.changed_timer_id = 0
         self.invalid_cache = False
+        self.is_stuck = False
 
         self.x = info.get('x', 0)
         self.y = info.get('y', 0)
@@ -185,8 +185,11 @@ class Note(Gtk.Window):
         context = self.get_style_context()
         context.add_class(self.color)
 
-        if self.app.settings.get_boolean('desktop-window-state'):
-            self.stick()
+        # stick() only works reliably once the window is mapped, so it is
+        # re-applied on map; before that the request can be dropped.
+        self.desktop_state_override = False
+        self.connect('map', self.update_desktop_state)
+        self.desktop_state_id = self.app.settings.connect('changed::desktop-window-state', self.update_desktop_state)
 
         # title bar
         self.title_bar = Gtk.Box(name='title-bar')
@@ -278,10 +281,10 @@ class Note(Gtk.Window):
         self.buffer.set_from_internal_markup(self.cached_text)
         self.changed_id = self.buffer.connect('content-changed', self.queue_update, True)
 
-        self.app.settings.connect('changed::font', self.set_font)
+        self.font_id = self.app.settings.connect('changed::font', self.set_font)
         self.set_font()
 
-        self.app.settings.connect('changed::title-height', self.update_title_bar_height)
+        self.title_height_id = self.app.settings.connect('changed::title-height', self.update_title_bar_height)
 
         self.create_format_menu(color_button, text_button)
 
@@ -292,9 +295,6 @@ class Note(Gtk.Window):
         self.move(self.x, self.y)
 
         self.show_all()
-
-    def test(self, *args):
-        self.buffer.test()
 
     def on_size_position_changed(self, *args):
         if self.showing:
@@ -407,6 +407,34 @@ class Note(Gtk.Window):
         # for some reason, the ABOVE flag is never actually being set, even when it should be
         # self.is_pinned = event.new_window_state & Gdk.WindowState.ABOVE
 
+        # present_with_time() and the compositor can drop a stick request made
+        # before the window was mapped, so re-assert it whenever the state
+        # reports otherwise. A manual choice from the title menu sets
+        # self.desktop_state_override and is left alone.
+        if (self.app.settings.get_boolean('desktop-window-state')
+                and not self.desktop_state_override and not self.is_stuck):
+            self.stick()
+
+    def update_desktop_state(self, *args):
+        # Called on map (one arg: the widget) and on a change of the setting
+        # (two args: settings, key). Only a setting change clears any per-note
+        # manual override.
+        if len(args) == 2:
+            self.desktop_state_override = False
+
+        if self.get_mapped():
+            if self.app.settings.get_boolean('desktop-window-state'):
+                self.stick()
+            else:
+                self.unstick()
+
+    def set_desktop_state_override(self, stuck):
+        self.desktop_state_override = True
+        if stuck:
+            self.stick()
+        else:
+            self.unstick()
+
     def on_title_click(self, w, event):
         if event.button == 3:
             menu = Gtk.Menu()
@@ -490,11 +518,11 @@ class Note(Gtk.Window):
             if self.is_stuck:
                 label = _("Only on This Workspace")
                 def on_activate(*args):
-                    self.unstick()
+                    self.set_desktop_state_override(False)
             else:
                 label = _("Always on Visible Workspace")
                 def on_activate(*args):
-                    self.stick()
+                    self.set_desktop_state_override(True)
 
             stick_menu_item = Gtk.MenuItem(label=label, visible=True)
             stick_menu_item.connect('activate', on_activate)
@@ -615,6 +643,25 @@ class Note(Gtk.Window):
 
     def duplicate(self, *args):
         self.app.duplicate_note(self)
+
+    def do_destroy(self):
+        if getattr(self, 'desktop_state_id', 0):
+            self.app.settings.disconnect(self.desktop_state_id)
+            self.desktop_state_id = 0
+
+        if getattr(self, 'font_id', 0):
+            self.app.settings.disconnect(self.font_id)
+            self.font_id = 0
+
+        if getattr(self, 'title_height_id', 0):
+            self.app.settings.disconnect(self.title_height_id)
+            self.title_height_id = 0
+
+        if self.changed_timer_id:
+            GLib.source_remove(self.changed_timer_id)
+            self.changed_timer_id = 0
+
+        Gtk.Window.do_destroy(self)
 
     def set_title(self, *args):
         self.title_text = self.title.get_text()
@@ -830,6 +877,8 @@ class Application(Gtk.Application):
         self.settings = Gio.Settings(schema_id=SCHEMA)
 
         self.dummy_window = Gtk.Window(title=_("Notes"), default_height=1, default_width=1, decorated=False, deletable=False, name='dummy-window')
+        # stick() is only effective once the window is mapped.
+        self.dummy_window.connect('map', self.update_dummy_window)
         self.dummy_window.show()
 
         self.file_handler = FileHandler(self.settings, self.dummy_window)
@@ -852,6 +901,7 @@ class Application(Gtk.Application):
 
         self.settings.connect('changed::show-in-tray', self.update_tray_icon)
         self.settings.connect('changed::show-in-taskbar', self.update_dummy_window)
+        self.settings.connect('changed::desktop-window-state', self.update_dummy_window)
         self.active_group_changed_id = self.settings.connect('changed::active-group', self.on_active_group_changed)
         self.update_dummy_window()
 
@@ -1056,8 +1106,11 @@ class Application(Gtk.Application):
 
         self.dummy_window.move(-2, -2)
 
+        # stick()/unstick() only take effect once the window is mapped.
         if self.settings.get_boolean('desktop-window-state'):
             self.dummy_window.stick()
+        else:
+            self.dummy_window.unstick()
 
     def activate_notes(self, time):
         for note in self.notes:
@@ -1106,8 +1159,8 @@ class Application(Gtk.Application):
         min_y = workarea.y
         max_y = workarea.y + workarea.height
 
-        x_end = x + self.settings.get_uint('default-height')
-        y_end = y + self.settings.get_uint('default-width')
+        x_end = x + self.settings.get_uint('default-width')
+        y_end = y + self.settings.get_uint('default-height')
 
         if x < min_x or x_end > max_x or y < min_y or y_end > max_y:
             # the calculated location wont work, so put the new note near the top left corner

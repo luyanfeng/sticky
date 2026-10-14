@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Resolve the script from this launcher's own location so the app also runs
-# from a relocatable bundle (AppImage) instead of an absolute /usr path.
+# Resolve the script relative to this launcher's own location, so it works for
+# a package installed to any prefix instead of relying on an absolute /usr path.
 # The X11/Wayland backend choice is handled by sticky.py.
 BINDIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
