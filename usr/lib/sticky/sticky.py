@@ -124,6 +124,11 @@ START_POSITIONS = {
     'bottom-right': _("Bottom Right"),
 }
 
+def title_icon_size(title_height):
+    """Icon size that scales along with the title bar height."""
+    return max(12, min(int(round(title_height * 0.45)), 32))
+
+
 class Note(Gtk.Window):
     @GObject.Signal(flags=GObject.SignalFlags.RUN_LAST, return_type=bool,
                     accumulator=GObject.signal_accumulator_true_handled)
@@ -184,10 +189,11 @@ class Note(Gtk.Window):
             self.stick()
 
         # title bar
-        self.title_bar = Gtk.Box(height_request=self.app.settings.get_uint('title-height'), name='title-bar')
+        self.title_bar = Gtk.Box(name='title-bar')
         self.title_bar.connect('button-press-event', self.on_title_click)
 
         color_icon = Gtk.Image.new_from_icon_name('sticky-color', Gtk.IconSize.BUTTON)
+        self.color_icon = color_icon
         color_button = Gtk.MenuButton(image=color_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
         color_button.connect('button-press-event', self.on_title_click)
         color_button.set_tooltip_text(_("Note Color"))
@@ -204,6 +210,7 @@ class Note(Gtk.Window):
         self.title_style_manager = XApp.StyleManager(widget=self.title_box)
 
         edit_title_icon = Gtk.Image.new_from_icon_name('sticky-edit', Gtk.IconSize.BUTTON)
+        self.edit_title_icon = edit_title_icon
         self.edit_title_button = Gtk.Button(image=edit_title_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
         self.edit_title_button.connect('clicked', self.set_title)
         self.edit_title_button.connect('button-press-event', self.on_title_click)
@@ -212,6 +219,7 @@ class Note(Gtk.Window):
         self.title_hover.set_child_widget(self.edit_title_button)
 
         close_icon = Gtk.Image.new_from_icon_name('sticky-delete', Gtk.IconSize.BUTTON)
+        self.close_icon = close_icon
         close_button = Gtk.Button(image=close_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
         close_button.connect('clicked', self.remove)
         close_button.connect('button-press-event', self.on_title_click)
@@ -227,6 +235,7 @@ class Note(Gtk.Window):
         self.title_bar.pack_end(self.lock_button, False, False, 0)
 
         add_icon = Gtk.Image.new_from_icon_name('sticky-add', Gtk.IconSize.BUTTON)
+        self.add_icon = add_icon
         add_button = Gtk.Button(image=add_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
         add_button.connect('clicked', self.app.new_note, self)
         add_button.connect('button-press-event', self.on_title_click)
@@ -234,12 +243,14 @@ class Note(Gtk.Window):
         self.title_bar.pack_end(add_button, False, False, 0)
 
         text_icon = Gtk.Image.new_from_icon_name('sticky-text', Gtk.IconSize.BUTTON)
+        self.text_icon = text_icon
         text_button = Gtk.MenuButton(image=text_icon, relief=Gtk.ReliefStyle.NONE, name='window-button', valign=Gtk.Align.CENTER)
         text_button.connect('button-press-event', self.on_title_click)
         text_button.set_tooltip_text(_("Format"))
         self.title_bar.pack_end(text_button, False, False, 20)
 
         self.set_titlebar(self.title_bar)
+        self.update_title_bar_height()
 
         # buffer
         self.buffer = NoteBuffer()
@@ -582,7 +593,13 @@ class Note(Gtk.Window):
         self.view_style_manager.set_from_pango_font_string(self.app.settings.get_string('font'))
 
     def update_title_bar_height(self, *args):
-        self.title_bar.set_size_request(-1, self.app.settings.get_uint('title-height'))
+        height = self.app.settings.get_uint('title-height')
+        self.title_bar.set_size_request(-1, height)
+
+        icon_size = title_icon_size(height)
+        for icon in (self.color_icon, self.edit_title_icon, self.close_icon,
+                     self.add_icon, self.text_icon, self.lock_icon, self.unlock_icon):
+            icon.set_pixel_size(icon_size)
 
     def apply_format(self, m, format_type):
         self.buffer.tag_selection(format_type)

@@ -79,6 +79,29 @@
     padding-right: 10px;
 }
 
+/* Let the title bar and its buttons shrink down to the configured
+   "title-height" instead of the theme's minimum widget height. */
+#sticky-note #title-bar {
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: 0;
+}
+
+#sticky-note #title-bar button,
+#sticky-note #title-bar menubutton {
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+
+#sticky-note #title-bar image {
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+}
+
 textview text {
     padding: 10px;
 }

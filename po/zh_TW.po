@@ -371,6 +371,14 @@ msgstr "預設高度"
 msgid "Default width"
 msgstr "預設寬度"
 
+#: usr/lib/sticky/sticky.py:673
+msgid "Title bar height"
+msgstr "標題列高度"
+
+#: usr/lib/sticky/sticky.py:673
+msgid "pixels"
+msgstr "像素"
+
 #: usr/lib/sticky/sticky.py:618
 msgid "Default position"
 msgstr "預設位置"
