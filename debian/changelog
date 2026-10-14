@@ -1,3 +1,13 @@
+sticky (1.36) alfa; urgency=medium
+
+  * Make the keyboard shortcuts configurable in a new Shortcuts preferences
+    page, including a new Show/Hide Notes shortcut.
+  * Show the current shortcuts in the shortcuts window.
+  * Document how to bind a system shortcut to "sticky --toggle" for global
+    control of the notes.
+
+ -- luyanfeng <e0110324@ceic.com>  Wed, 14 Oct 2026 09:22:46 +0800
+
 sticky (1.35) alfa; urgency=medium
 
   * Prefer the native Wayland backend, falling back to XWayland when the

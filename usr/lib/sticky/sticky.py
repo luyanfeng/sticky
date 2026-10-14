@@ -125,25 +125,86 @@ COLOR_CODES = {
     'magenta': "#ff7ff7"
 }
 
+# Keyboard shortcuts. The key is a stable action id, the value is
+# (display label, default accelerator in GTK syntax). A matching entry in the
+# 'shortcuts' GSettings key ("action:accelerator") overrides the default, and
+# an empty accelerator disables the action.
 SHORTCUTS = {
-    _("Operations"): [
-        (_("Move selection up"), '<ctrl><shift>Up'),
-        (_("Move selection down"), '<ctrl><shift>Down'),
-        (_("Undo"), '<ctrl>z'),
-        (_("Redo"), '<ctrl>y'),
-        (_("Toggle Checklist"), '<ctrl>e'),
-        (_("Toggle Bullets"), '<ctrl>l')
-    ],
-    _("Formatting"): [
-        (_("Bold"), '<ctrl>b'),
-        (_("Italic"), '<ctrl>i'),
-        (_("Fixed Width"), '<ctrl>f'),
-        (_("Underline"), '<ctrl>u'),
-        (_("Strikethrough"), '<ctrl>k'),
-        (_("Highlight"), '<ctrl>g'),
-        (_("Header"), '<ctrl>h')
-    ]
+    'move-up':        (_("Move selection up"), '<ctrl><shift>Up'),
+    'move-down':      (_("Move selection down"), '<ctrl><shift>Down'),
+    'undo':           (_("Undo"), '<ctrl>z'),
+    'redo':           (_("Redo"), '<ctrl>y'),
+    'checklist':      (_("Toggle Checklist"), '<ctrl>e'),
+    'bullets':        (_("Toggle Bullets"), '<ctrl>l'),
+    'bold':           (_("Bold"), '<ctrl>b'),
+    'italic':         (_("Italic"), '<ctrl>i'),
+    'monospace':      (_("Fixed Width"), '<ctrl>f'),
+    'underline':      (_("Underline"), '<ctrl>u'),
+    'strikethrough':  (_("Strikethrough"), '<ctrl>k'),
+    'highlight':      (_("Highlight"), '<ctrl>g'),
+    'header':         (_("Header"), '<ctrl>h'),
+    'toggle-notes':   (_("Show/Hide Notes"), '<ctrl><alt>n')
 }
+
+# Text scale shortcuts keep their position based defaults, but are listed here
+# so the shortcuts window and the preferences page can show them.
+FONT_SCALE_ACTIONS = [
+    ('scale-small',  _("Small Text")),
+    ('scale-normal', _("Normal Text")),
+    ('scale-large',  _("Large Text")),
+    ('scale-larger', _("Larger Text"))
+]
+
+SCALE_DEFAULT_ACCELS = {
+    'scale-small':  '<ctrl>2',
+    'scale-normal': '<ctrl>3',
+    'scale-large':  '<ctrl>4',
+    'scale-larger': '<ctrl>5'
+}
+
+_shortcuts_settings = None
+
+def _shortcuts():
+    global _shortcuts_settings
+    if _shortcuts_settings is None:
+        _shortcuts_settings = Gio.Settings.new(SCHEMA)
+    return _shortcuts_settings
+
+def get_shortcut_accel(action_id):
+    """The accelerator configured for an action, or None if disabled."""
+    for entry in _shortcuts().get_strv('shortcuts'):
+        if ':' in entry:
+            key, value = entry.split(':', 1)
+            if key == action_id:
+                return value or None
+
+    if action_id in SCALE_DEFAULT_ACCELS:
+        return SCALE_DEFAULT_ACCELS[action_id]
+
+    return SHORTCUTS.get(action_id, ('', None))[1]
+
+def get_shortcut_label(action_id):
+    if action_id.startswith('scale-'):
+        for scale_id, scale_name in FONT_SCALE_ACTIONS:
+            if scale_id == action_id:
+                return scale_name
+        return action_id
+
+    return SHORTCUTS.get(action_id, ('', action_id))[0]
+
+def match_shortcut(event, action_id):
+    """Whether a key event matches the accelerator configured for an action."""
+    accel = get_shortcut_accel(action_id)
+    if not accel:
+        return False
+
+    (keycode, mods) = Gtk.accelerator_parse(accel)
+    if keycode == 0:
+        return False
+
+    return (event.keyval == keycode and
+            (event.state & Gtk.accelerator_get_default_mod_mask()) == mods)
+
 
 START_POSITIONS = {
     'top-left': _("Top Left"),
@@ -362,72 +423,71 @@ class Note(Gtk.Window):
 
     def on_key_press(self, v, event):
         if event.get_state() & Gdk.ModifierType.CONTROL_MASK:
-            if event.get_state() & Gdk.ModifierType.SHIFT_MASK:
-                if event.get_keyval()[1] == Gdk.KEY_Up:
-                    self.buffer.shift(True)
-                    return Gdk.EVENT_STOP
+            if event.get_state() & Gdk.ModifierType.SHIFT_MASK and match_shortcut(event, 'move-up'):
+                self.buffer.shift(True)
+                return Gdk.EVENT_STOP
 
-                elif event.get_keyval()[1] == Gdk.KEY_Down:
-                    self.buffer.shift(False)
-                    return Gdk.EVENT_STOP
+            elif match_shortcut(event, 'move-down'):
+                self.buffer.shift(False)
+                return Gdk.EVENT_STOP
 
-            if event.get_keyval()[1] == Gdk.KEY_z:
+            elif match_shortcut(event, 'undo'):
                 self.buffer.undo()
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_y:
+            elif match_shortcut(event, 'redo'):
                 self.buffer.redo()
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_e:
+            elif match_shortcut(event, 'checklist'):
                 self.buffer.toggle_checklist()
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_l:
+            elif match_shortcut(event, 'bullets'):
                 self.buffer.toggle_bullets()
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_b:
+            elif match_shortcut(event, 'bold'):
                 self.buffer.tag_selection('bold')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_i:
+            elif match_shortcut(event, 'italic'):
                 self.buffer.tag_selection('italic')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_f:
+            elif match_shortcut(event, 'monospace'):
                 self.buffer.tag_selection('monospace')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_u:
+            elif match_shortcut(event, 'underline'):
                 self.buffer.tag_selection('underline')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_h:
+            elif match_shortcut(event, 'header'):
                 self.buffer.tag_selection('header')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_k:
+            elif match_shortcut(event, 'strikethrough'):
                 self.buffer.tag_selection('strikethrough')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_g:
+            elif match_shortcut(event, 'highlight'):
                 self.buffer.tag_selection('highlight')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_2:
+            elif match_shortcut(event, 'scale-small'):
                 self.buffer.tag_selection('small')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_3:
+            elif match_shortcut(event, 'scale-normal'):
                 self.buffer.tag_selection('normal')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_4:
+            elif match_shortcut(event, 'scale-large'):
                 self.buffer.tag_selection('large')
                 return Gdk.EVENT_STOP
 
-            elif event.get_keyval()[1] == Gdk.KEY_5:
+            elif match_shortcut(event, 'scale-larger'):
                 self.buffer.tag_selection('larger')
                 return Gdk.EVENT_STOP
 
@@ -763,6 +823,113 @@ class Note(Gtk.Window):
 
         self.emit('update')
 
+class ShortcutRow(Gtk.Box):
+    """One action row: label, current accelerator button, reset button."""
+    def __init__(self, action_id, on_change):
+        super(ShortcutRow, self).__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.action_id = action_id
+        self.on_change = on_change
+        self.capturing = False
+
+        self.label = Gtk.Label(label=get_shortcut_label(action_id), halign=Gtk.Align.START)
+        self.pack_start(self.label, True, True, 0)
+
+        self.accel = get_shortcut_accel(action_id) or ''
+        self.button = Gtk.Button(label=Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.accel)) or _('Disabled'))
+        self.button.connect('clicked', self.start_capture)
+        self.pack_start(self.button, False, False, 0)
+
+        reset = Gtk.Button.new_from_icon_name('edit-clear-symbolic', Gtk.IconSize.BUTTON)
+        reset.set_tooltip_text(_("Reset to default"))
+        reset.connect('clicked', self.reset)
+        self.pack_start(reset, False, False, 0)
+
+    def refresh(self):
+        self.accel = get_shortcut_accel(self.action_id) or ''
+        self.button.set_label(Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.accel)) or _('Disabled'))
+        self.stop_capture()
+
+    def start_capture(self, *args):
+        self.capturing = True
+        self.button.set_label(_('Press keys…'))
+        self.button.grab_focus()
+
+    def stop_capture(self):
+        self.capturing = False
+
+    def reset(self, *args):
+        self.save(None)   # remove any override, i.e. the built-in default
+
+    def save(self, accel):
+        settings = Gio.Settings.new(SCHEMA)
+        entries = [e for e in settings.get_strv('shortcuts') if ':' in e]
+        entries = [e for e in entries if e.split(':', 1)[0] != self.action_id]
+        if accel is not None or any(e.split(':', 1)[0] == self.action_id for e in settings.get_strv('shortcuts')):
+            entries.append('%s:%s' % (self.action_id, accel or ''))
+        settings.set_strv('shortcuts', entries)
+        self.on_change()
+
+    def do_key_press_event(self, event):
+        if not self.capturing:
+            return Gtk.Box.do_key_press_event(self, event)
+
+        keyval = event.keyval
+        mods = event.state & Gtk.accelerator_get_default_mod_mask()
+
+        if keyval in (Gdk.KEY_Escape,):
+            self.refresh()
+            return Gdk.EVENT_STOP
+
+        # plain Escape-less letters without any modifier make poor shortcuts;
+        # require at least one modifier unless it is a function/media key
+        if mods == 0 and keyval not in range(Gdk.KEY_F1, Gdk.KEY_F12 + 1):
+            self.refresh()
+            return Gdk.EVENT_STOP
+
+        name = Gtk.accelerator_name(keyval, mods)
+        self.save(name)
+        self.refresh()
+        return Gdk.EVENT_STOP
+
+class ShortcutsEditor(Gtk.Box):
+    """Lists every configurable shortcut and lets the user rebind it."""
+    ACTION_IDS = ('move-up', 'move-down', 'undo', 'redo', 'checklist', 'bullets',
+                  'bold', 'italic', 'monospace', 'underline', 'strikethrough',
+                  'highlight', 'header', 'scale-small', 'scale-normal',
+                  'scale-large', 'scale-larger', 'toggle-notes')
+
+    def __init__(self):
+        super(ShortcutsEditor, self).__init__(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.rows = []
+
+        hint = Gtk.Label(halign=Gtk.Align.START)
+        hint.set_markup('<small>%s</small>' % _(
+            'Click a shortcut and press the new key combination. '
+            'An empty shortcut disables the action.'))
+        hint.set_line_wrap(True)
+        self.pack_start(hint, False, False, 5)
+
+        frame = Gtk.Frame()
+        listbox = Gtk.ListBox()
+        listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        for action_id in self.ACTION_IDS:
+            row = ShortcutRow(action_id, self.refresh_all)
+            self.rows.append(row)
+            listbox.add(row)
+        frame.add(listbox)
+        self.pack_start(frame, False, False, 0)
+
+        note = Gtk.Label(halign=Gtk.Align.START)
+        note.set_markup('<small>%s</small>' % _(
+            'To control the notes from anywhere (even when they are not '
+            'focused), bind a system shortcut to “sticky --toggle”.'))
+        note.set_line_wrap(True)
+        self.pack_start(note, False, False, 5)
+
+    def refresh_all(self, *args):
+        for row in self.rows:
+            row.refresh()
+
 class SettingsWindow(XApp.PreferencesWindow):
     def __init__(self, app):
         super(SettingsWindow, self).__init__(skip_taskbar_hint=False, title=_("Preferences"))
@@ -799,6 +966,11 @@ class SettingsWindow(XApp.PreferencesWindow):
 
         self.add_page(page, 'notes', _("Notes"))
 
+        # keyboard shortcuts
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        page.pack_start(ShortcutsEditor(), False, False, 0)
+        self.add_page(page, 'shortcuts', _("Shortcuts"))
+
         # backups
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
@@ -823,18 +995,34 @@ class ShortcutsWindow(Gtk.ShortcutsWindow):
 
         section = Gtk.ShortcutsSection(visible=True)
 
-        for group, items in SHORTCUTS.items():
-            group = Gtk.ShortcutsGroup(title=group, visible=False)
+        groups = (
+            (_("Operations"), ('move-up', 'move-down', 'undo', 'redo',
+                               'checklist', 'bullets', 'toggle-notes')),
+            (_("Formatting"), ('bold', 'italic', 'monospace', 'underline',
+                               'strikethrough', 'highlight', 'header'))
+        )
+
+        for group_title, action_ids in groups:
+            group = Gtk.ShortcutsGroup(title=group_title, visible=False)
             section.add(group)
 
-            for shortcut in items:
-                shortcut_item = Gtk.ShortcutsShortcut(title=shortcut[0], accelerator=shortcut[1], visible=True)
+            for action_id in action_ids:
+                accel = get_shortcut_accel(action_id)
+                if not accel:
+                    continue
+
+                shortcut_item = Gtk.ShortcutsShortcut(title=get_shortcut_label(action_id),
+                                                      accelerator=accel, visible=True)
                 group.add(shortcut_item)
 
         group = Gtk.ShortcutsGroup(title=_("Text Size"), visible=False)
         section.add(group)
-        for i in range(len(FONT_SCALES)):
-            shortcut_item = Gtk.ShortcutsShortcut(title=FONT_SCALES[i][1], accelerator='<ctrl>%d' % (i + 2), visible=True)
+        for (action_id, label) in FONT_SCALE_ACTIONS:
+            accel = get_shortcut_accel(action_id)
+            if not accel:
+                continue
+
+            shortcut_item = Gtk.ShortcutsShortcut(title=label, accelerator=accel, visible=True)
             group.add(shortcut_item)
 
         self.add(section)
@@ -1299,10 +1487,26 @@ class Application(Gtk.Application):
         note = Note(self, self.dummy_window, info)
         note.connect('update', self.on_update)
         note.connect('removed', self.on_removed)
+        self.install_note_accels(note)
 
         self.notes.append(note)
 
         return note
+
+    def install_note_accels(self, note):
+        """Make the application-wide shortcuts work while a note has focus."""
+        accel_group = Gtk.AccelGroup()
+        accel_group.connect(
+            *Gtk.accelerator_parse(get_shortcut_accel('toggle-notes') or ''),
+            0, Gtk.AccelFlags.VISIBLE,
+            lambda *args: self.toggle_notes())
+        note.add_accel_group(accel_group)
+
+    def toggle_notes(self, *args):
+        if self.notes_hidden:
+            self.activate_notes(Gtk.get_current_event_time())
+        else:
+            self.hide_notes()
 
     def load_notes(self):
         for note in self.notes:

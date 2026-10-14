@@ -375,7 +375,43 @@ msgstr "預設寬度"
 msgid "Title bar height"
 msgstr "標題列高度"
 
-#: usr/lib/sticky/sticky.py:673
+#: usr/lib/sticky/sticky.py
+msgid "Show/Hide Notes"
+msgstr "顯示/隱藏便箋"
+
+#: usr/lib/sticky/sticky.py
+msgid "Shortcuts"
+msgstr "快捷鍵"
+
+#: usr/lib/sticky/sticky.py
+msgid "Disabled"
+msgstr "已停用"
+
+#: usr/lib/sticky/sticky.py
+msgid "Reset to default"
+msgstr "恢復預設"
+
+#: usr/lib/sticky/sticky.py
+msgid "Press keys…"
+msgstr "請按下按鍵…"
+
+#: usr/lib/sticky/sticky.py
+msgid ""
+"Click a shortcut and press the new key combination. An empty shortcut "
+"disables the action."
+msgstr "點擊一個快捷鍵後按下新的組合鍵。留空則停用該操作。"
+
+#: usr/lib/sticky/sticky.py
+msgid ""
+"To control the notes from anywhere (even when they are not focused), bind a "
+"system shortcut to “sticky --toggle”."
+msgstr "想在便箋未獲焦點時也能控制（全域熱鍵），請在系統快捷鍵中綁定命令「sticky --toggle」。"
+
+#: usr/lib/sticky/sticky.py
+msgid "Notes on all desktops needs the X11 backend. Restart the application to apply it."
+msgstr "「在所有桌面上顯示便箋」需要 X11 後端，重啟應用後生效。"
+
+#: usr/lib/sticky/sticky.py
 msgid "pixels"
 msgstr "像素"
 

@@ -202,6 +202,16 @@
       </description>
     </key>
 
+    <key name='shortcuts' type='as'>
+      <default>[]</default>
+      <summary>Keyboard shortcuts</summary>
+      <description>
+        Keyboard shortcuts as "action:accelerator" strings, where the accelerator
+        uses the GTK accelerator syntax (e.g. "bold:&lt;Primary&gt;b"). Actions not
+        listed here use their built-in default.
+      </description>
+    </key>
+
     <key name='disable-delete-confirm' type='b'>
       <default>false</default>
       <summary>Disable delete confirmation</summary>
