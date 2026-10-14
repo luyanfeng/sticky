@@ -88,6 +88,19 @@ AppDir:
       - usr/lib/sysusers.d
       - usr/lib/tmpfiles.d
       - usr/lib/valgrind
+      # systemd runtime, pulled in through libpam-systemd but never used here.
+      - lib/systemd
+      - bin/systemctl*
+      - bin/systemd*
+      - usr/bin/systemd-*
+      - etc/systemd
+      - etc/xdg/systemd
+      - var/lib/systemd
+      - var/lib/polkit-1
+      # Shell completions and polkit metadata for the bundled libraries.
+      - usr/share/bash-completion
+      - usr/share/zsh
+      - usr/share/polkit-1
       # Perl is only pulled in as a dependency and is not used by the app.
       - usr/bin/perl*
       - usr/lib/x86_64-linux-gnu/perl*
