@@ -184,7 +184,7 @@ class Note(Gtk.Window):
             self.stick()
 
         # title bar
-        self.title_bar = Gtk.Box(height_request=30, name='title-bar')
+        self.title_bar = Gtk.Box(height_request=self.app.settings.get_uint('title-height'), name='title-bar')
         self.title_bar.connect('button-press-event', self.on_title_click)
 
         color_icon = Gtk.Image.new_from_icon_name('sticky-color', Gtk.IconSize.BUTTON)
@@ -269,6 +269,8 @@ class Note(Gtk.Window):
 
         self.app.settings.connect('changed::font', self.set_font)
         self.set_font()
+
+        self.app.settings.connect('changed::title-height', self.update_title_bar_height)
 
         self.create_format_menu(color_button, text_button)
 
@@ -579,6 +581,9 @@ class Note(Gtk.Window):
         self.title_style_manager.set_from_pango_font_string(self.app.settings.get_string('font'))
         self.view_style_manager.set_from_pango_font_string(self.app.settings.get_string('font'))
 
+    def update_title_bar_height(self, *args):
+        self.title_bar.set_size_request(-1, self.app.settings.get_uint('title-height'))
+
     def apply_format(self, m, format_type):
         self.buffer.tag_selection(format_type)
 
@@ -665,6 +670,7 @@ class SettingsWindow(XApp.PreferencesWindow):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         page.pack_start(GSettingsSpinButton(_("Default height"), SCHEMA, 'default-height', mini=50, maxi=2000, step=10), False, False, 0)
         page.pack_start(GSettingsSpinButton(_("Default width"), SCHEMA, 'default-width', mini=50, maxi=2000, step=10), False, False, 0)
+        page.pack_start(GSettingsSpinButton(_("Title bar height"), SCHEMA, 'title-height', mini=1, maxi=100, step=1, units=_("pixels")), False, False, 0)
         start_posititions = [(x, y) for x, y in START_POSITIONS.items()]
         page.pack_start(GSettingsComboBox(_("Default position"), SCHEMA, 'default-position', options=start_posititions, valtype=str), False, False, 0)
         try:

@@ -20,6 +20,15 @@
       </description>
     </key>
 
+    <key name='title-height' type='u'>
+      <default>30</default>
+      <range min='1' max='100'/>
+      <summary>Title bar height</summary>
+      <description>
+        The height in pixels of the title bar at the top of a note.
+      </description>
+    </key>
+
     <key name='default-position' type='s'>
       <default>"top-left"</default>
       <summary>Default Position</summary>
