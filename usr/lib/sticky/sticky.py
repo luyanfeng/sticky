@@ -1495,11 +1495,17 @@ class Application(Gtk.Application):
 
     def install_note_accels(self, note):
         """Make the application-wide shortcuts work while a note has focus."""
+        accel = get_shortcut_accel('toggle-notes')
+        if not accel:
+            return
+
+        (key, mods) = Gtk.accelerator_parse(accel)
+        if not key:
+            return
+
         accel_group = Gtk.AccelGroup()
-        accel_group.connect(
-            *Gtk.accelerator_parse(get_shortcut_accel('toggle-notes') or ''),
-            0, Gtk.AccelFlags.VISIBLE,
-            lambda *args: self.toggle_notes())
+        accel_group.connect(key, mods, Gtk.AccelFlags.VISIBLE,
+                            lambda *args: self.toggle_notes())
         note.add_accel_group(accel_group)
 
     def toggle_notes(self, *args):

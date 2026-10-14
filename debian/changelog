@@ -1,3 +1,9 @@
+sticky (1.37) alfa; urgency=medium
+
+  * Fix a startup crash introduced by the shortcut accelerators.
+
+ -- luyanfeng <e0110324@ceic.com>  Wed, 14 Oct 2026 09:22:46 +0800
+
 sticky (1.36) alfa; urgency=medium
 
   * Make the keyboard shortcuts configurable in a new Shortcuts preferences
