@@ -74,6 +74,19 @@
 }
 
 
+/* Square off the note corners. The theme rounds a window's top corners
+   through .background .titlebar, while the bottom corners stay square, which
+   left the note looking lopsided. */
+#sticky-note,
+#sticky-note .titlebar,
+#sticky-note decoration {
+    border-radius: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
 #title-bar {
     padding-left: 6px;
     padding-right: 6px;

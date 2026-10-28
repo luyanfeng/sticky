@@ -1,3 +1,11 @@
+sticky (1.39) alfa; urgency=medium
+
+  * Square off the note corners. The theme rounds the top corners of a
+    window through .background .titlebar, leaving the bottom corners square,
+    so a note looked lopsided.
+
+ -- luyanfeng <e0110324@ceic.com>  Wed, 28 Oct 2026 17:30:00 +0800
+
 sticky (1.38) alfa; urgency=medium
 
   * Use the X11 backend whenever an X display is reachable, including the
