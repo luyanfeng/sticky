@@ -5,41 +5,29 @@ import sys
 
 # Pick the GDK backend before Gdk opens a display.
 #
-# The native Wayland backend is preferred, but Wayland has no notion of
-# workspaces, so "show notes on all desktops" (GDK_WINDOW_STATE_STICKY) can
-# only be honoured through XWayland, where the option maps to
-# _NET_WM_STATE_STICKY. When that setting is on and XWayland is available, use
-# the X11 backend so the feature actually works. STICKY_BACKEND overrides the
-# choice with 'wayland' or 'x11'.
+# Notes must keep the position the user put them in, and Wayland has no way for
+# a client to place a toplevel window: move() is ignored, and every re-map of a
+# hidden window is placed by the compositor, which moves the notes. Workspaces,
+# and with them "show notes on all desktops" (GDK_WINDOW_STATE_STICKY), only
+# exist through XWayland as well. So whenever an X display is reachable - an
+# Xorg session or the XWayland server of a Wayland session - use the X11
+# backend. The native Wayland backend remains the choice for sessions without
+# XWayland, where at least the notes keep their size and are not misplaced.
+# STICKY_BACKEND overrides the choice with 'wayland' or 'x11'.
 def _select_gdk_backend():
     requested = os.environ.get('STICKY_BACKEND', '').strip().lower()
     if requested in ('wayland', 'x11'):
         return requested
 
-    on_wayland = bool(os.environ.get('WAYLAND_DISPLAY')) or \
-        os.environ.get('XDG_SESSION_TYPE') == 'wayland'
-    has_x11 = bool(os.environ.get('DISPLAY'))
-
-    if on_wayland and has_x11 and _wants_all_desktops():
+    if os.environ.get('DISPLAY'):
         return 'x11'
 
+    on_wayland = bool(os.environ.get('WAYLAND_DISPLAY')) or \
+        os.environ.get('XDG_SESSION_TYPE') == 'wayland'
     if on_wayland:
         return 'wayland'
 
-    if has_x11:
-        return 'x11'
-
     return None
-
-def _wants_all_desktops():
-    """Whether notes are configured to show on every desktop."""
-    try:
-        import gi
-        gi.require_version('Gio', '2.0')
-        from gi.repository import Gio
-        return Gio.Settings.new('org.x.sticky').get_boolean('desktop-window-state')
-    except Exception:
-        return False
 
 _backend = _select_gdk_backend()
 if _backend:
@@ -51,6 +39,18 @@ gi.require_version('Gspell', '1')
 gi.require_version('Gtk', '3.0')
 gi.require_version('XApp', '1.0')
 from gi.repository import Gdk, Gio, GObject, Gspell, Gtk, XApp
+
+# The status icon. Xapp's own StatusIcon needs either an XEmbed system tray or
+# an AppIndicator library next to it, and GNOME 50 dropped XEmbed tray support
+# entirely, so nothing showed up there. AyatanaAppIndicator3 talks to the
+# StatusNotifierItem host that GNOME Shell, KDE and Xfce all provide, which
+# makes it the primary implementation; Xapp remains the fallback for desktops
+# that have the tray but no StatusNotifier host.
+try:
+    gi.require_version('AyatanaAppIndicator3', '0.1')
+    from gi.repository import AyatanaAppIndicator3
+except (ValueError, ImportError):
+    AyatanaAppIndicator3 = None
 
 from xapp.GSettingsWidgets import *
 
@@ -1243,14 +1243,21 @@ class Application(Gtk.Application):
         self.settings.set_boolean('first-run', False)
 
     def create_status_icon(self):
-        self.status_icon = XApp.StatusIcon()
-        self.status_icon.set_name('sticky')
-        self.status_icon.set_icon_name('sticky-symbolic')
-        self.status_icon.set_tooltip_text('%s\n<i>%s</i>\n<i>%s</i>' % (_("Notes"),
-                                                                        _("Left click to toggle notes"),
-                                                                        _("Middle click to toggle the manager")))
-        self.status_icon.set_visible(True)
-        self.status_icon.connect('button-press-event', self.on_tray_button_pressed)
+        if AyatanaAppIndicator3 is not None:
+            self.status_icon = AyatanaAppIndicator3.Indicator.new(
+                'sticky', 'sticky-symbolic',
+                AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+            self.status_icon.set_title(_("Notes"))
+            self.status_icon.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
+        else:
+            self.status_icon = XApp.StatusIcon()
+            self.status_icon.set_name('sticky')
+            self.status_icon.set_icon_name('sticky-symbolic')
+            self.status_icon.set_tooltip_text('%s\n<i>%s</i>\n<i>%s</i>' % (_("Notes"),
+                                                                            _("Left click to toggle notes"),
+                                                                            _("Middle click to toggle the manager")))
+            self.status_icon.set_visible(True)
+            self.status_icon.connect('button-press-event', self.on_tray_button_pressed)
 
         self.rebuild_tray_context_menu()
 
@@ -1267,6 +1274,14 @@ class Application(Gtk.Application):
         self.group_buttons = {}
 
         self.context_menu = Gtk.Menu()
+
+        # StatusNotifierItem only hands the host a menu, there is no equivalent
+        # of Xapp's click signal, so the toggle has to live in the menu too.
+        # It doubles as the middle click target.
+        show_hide_item = Gtk.MenuItem(label=_("Show/Hide Notes"))
+        show_hide_item.connect('activate', self.toggle_notes)
+        self.context_menu.append(show_hide_item)
+
         item = Gtk.MenuItem(label=_("New Note"))
         item.connect('activate', self.new_note)
         self.context_menu.append(item)
@@ -1307,10 +1322,18 @@ class Application(Gtk.Application):
 
         self.context_menu.show_all()
 
-        self.status_icon.set_secondary_menu(self.context_menu)
+        if AyatanaAppIndicator3 is not None:
+            self.status_icon.set_menu(self.context_menu)
+            self.status_icon.set_secondary_activate_target(show_hide_item)
+        else:
+            self.status_icon.set_secondary_menu(self.context_menu)
 
     def destroy_status_icon(self):
-        self.status_icon.set_visible(False)
+        if AyatanaAppIndicator3 is not None:
+            self.status_icon.set_status(AyatanaAppIndicator3.IndicatorStatus.PASSIVE)
+        else:
+            self.status_icon.set_visible(False)
+
         self.status_icon = None
 
     def update_tray_icon(self, *args):

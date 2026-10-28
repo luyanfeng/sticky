@@ -75,8 +75,8 @@
 
 
 #title-bar {
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-left: 6px;
+    padding-right: 6px;
 }
 
 /* Let the title bar and its buttons shrink down to the configured
@@ -92,7 +92,7 @@
     min-height: 0;
     min-width: 0;
     padding: 0;
-    margin: 0;
+    margin: 0 4px;
     border: 0;
 }
 

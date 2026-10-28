@@ -49,6 +49,7 @@ sudo cp data/org.x.sticky.service.in /usr/share/dbus-1/services/org.x.sticky.ser
 - gir1.2-gtk-3.0 (>= 3.20.0)
 - gir1.2-xapp-1.0 (>= 1.6.0)
 - gir1.2-gspell-1
+- gir1.2-ayatanaappindicator3-0.1
 - python3
 - python3-gi
 - python3-xapp (>= 1.6.0)

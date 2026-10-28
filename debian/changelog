@@ -1,3 +1,20 @@
+sticky (1.38) alfa; urgency=medium
+
+  * Use the X11 backend whenever an X display is reachable, including the
+    XWayland server of a Wayland session. Wayland cannot place toplevel
+    windows, so every re-map moved the notes; positions and workspaces work
+    again through XWayland. The native backend is still used on Wayland
+    sessions without XWayland.
+  * Draw the status icon through AyatanaAppIndicator3, which talks to the
+    StatusNotifierItem host that GNOME, KDE and Xfce provide. Xapp's own
+    status icon needs an XEmbed tray, which GNOME 50 removed, so the icon was
+    invisible there. Xapp stays as a fallback.
+  * Add a Show/Hide Notes entry to the tray menu, since
+    StatusNotifierItem hosts do not report clicks to the application.
+  * Space the note title bar buttons further apart.
+
+ -- luyanfeng <e0110324@ceic.com>  Wed, 28 Oct 2026 17:05:00 +0800
+
 sticky (1.37) alfa; urgency=medium
 
   * Fix a startup crash introduced by the shortcut accelerators.
