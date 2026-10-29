@@ -1,3 +1,16 @@
+sticky (1.40) alfa; urgency=medium
+
+  * Stop the notes from drifting towards the top left corner on every
+    login. A note is mapped before the window manager has placed it, and the
+    position reported in that window - the window manager's own choice - was
+    saved as if the user had put the note there. On login, while XWayland is
+    still starting, that placement is the same corner for every note, so each
+    login moved them all a bit further. The window manager's placement is now
+    ignored for a short settling period after mapping, during which the saved
+    position is re-asserted instead. Dragging a note still saves its position.
+
+ -- luyanfeng <e0110324@ceic.com>  Thu, 29 Oct 2026 09:15:00 +0800
+
 sticky (1.39) alfa; urgency=medium
 
   * Square off the note corners. The theme rounds the top corners of a

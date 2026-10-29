@@ -96,6 +96,14 @@ DBUS_INTERFACE_XML = '''
 
 UPDATE_DELAY = 1
 
+# How long after a note is mapped the window manager may still be deciding
+# where to put it. Configure events during that window are ignored for the
+# saved position, and the requested position is re-asserted instead.
+POSITION_SETTLE_MS = 1500
+
+# Interval between position re-asserts while the note is settling.
+POSITION_REASSERT_INTERVAL = 250
+
 FONT_SCALES = [
     ('small', _("Small Text"), 'small'),
     ('normal', _("Normal Text"), 'medium'),
@@ -387,13 +395,59 @@ class Note(Gtk.Window):
         self.connect('show', self.on_show)
         self.connect('window-state-event', self.update_window_state)
 
-        self.move(self.x, self.y)
+        # The saved position has to be re-asserted after mapping. A note maps
+        # before the window manager has placed it, and the position reported in
+        # that window is the window manager's own choice, not the user's; on
+        # login, when XWayland is still coming up, that placement is always the
+        # same corner and every note crept towards it on each login.
+        self.position_deadline = 0
+        self.position_timer_id = 0
+        self.connect('map', self.on_map_place)
 
         self.show_all()
+
+    def on_map_place(self, *args):
+        # Position is meaningless on native Wayland, where the compositor
+        # decides: skip the settling dance there.
+        if running_under_wayland():
+            return
+
+        self.position_deadline = GLib.get_monotonic_time() + POSITION_SETTLE_MS * 1000
+
+        # Moving from the configure handler would trigger another configure
+        # event and spin, so re-assert from a timer instead: the window manager
+        # gets its placement overridden repeatedly until it stops moving the
+        # window.
+        if self.position_timer_id == 0:
+            self.position_timer_id = GLib.timeout_add(
+                POSITION_REASSERT_INTERVAL, self.reassert_position)
+
+    def reassert_position(self):
+        if not self.position_is_settling():
+            self.position_timer_id = 0
+            return False
+
+        if self.get_mapped():
+            self.move(self.x, self.y)
+
+        return True
+
+    def position_is_settling(self):
+        return GLib.get_monotonic_time() < self.position_deadline
+
+    def stop_position_timer(self):
+        if getattr(self, 'position_timer_id', 0):
+            GLib.source_remove(self.position_timer_id)
+            self.position_timer_id = 0
 
     def on_size_position_changed(self, *args):
         if self.showing:
             self.showing = False
+            return
+
+        # While the window manager is still placing the note, a configure event
+        # reports its own choice and must not overwrite the saved position.
+        if self.position_is_settling():
             return
 
         changed = False
@@ -765,6 +819,9 @@ class Note(Gtk.Window):
         if getattr(self, 'changed_timer_id', 0):
             GLib.source_remove(self.changed_timer_id)
             self.changed_timer_id = 0
+
+        if getattr(self, 'position_timer_id', 0):
+            self.stop_position_timer()
 
         Gtk.Window.do_destroy(self)
 
