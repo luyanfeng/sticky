@@ -402,7 +402,16 @@ class Note(Gtk.Window):
         # same corner and every note crept towards it on each login.
         self.position_deadline = 0
         self.position_timer_id = 0
+        self.pointer_pressed = False
         self.connect('map', self.on_map_place)
+
+        # Track the pointer button state, so configure events caused by the
+        # window manager can be told apart from ones the user caused. The
+        # buttons and the title bar consume presses before they reach the
+        # window, so listen on the window itself in the capture phase.
+        self.connect('button-press-event', self.on_button_press_state)
+        self.connect('button-release-event', self.on_button_release_state)
+        self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
 
         self.show_all()
 
@@ -430,6 +439,11 @@ class Note(Gtk.Window):
         if self.get_mapped():
             self.move(self.x, self.y)
 
+            # The size suffers the same race as the position, so restore it
+            # too; resizing is what reflows the text.
+            if self.get_size() != (self.width, self.height):
+                self.resize(self.width, self.height)
+
         return True
 
     def position_is_settling(self):
@@ -446,8 +460,19 @@ class Note(Gtk.Window):
             return
 
         # While the window manager is still placing the note, a configure event
-        # reports its own choice and must not overwrite the saved position.
+        # reports its own choice and must not overwrite the saved geometry. The
+        # size needs the same protection as the position: a note that comes up
+        # before the session has settled is resized to its natural size, which
+        # reflows the text and shifts the note against its neighbours.
         if self.position_is_settling():
+            return
+
+        # Anything the window manager or the compositor decides about the
+        # geometry - the initial placement, a workspace switch, a session
+        # restore - arrives while no button is held. A geometry the user asks
+        # for always does, because dragging or resizing a note means holding a
+        # pointer button, so only accept the geometry while one is down.
+        if not self.pointer_is_down():
             return
 
         changed = False
@@ -471,6 +496,28 @@ class Note(Gtk.Window):
 
         if changed:
             self.queue_update()
+
+    def on_button_press_state(self, widget, event):
+        self.pointer_pressed = True
+
+        return Gdk.EVENT_PROPAGATE
+
+    def on_button_release_state(self, widget, event):
+        # The geometry arrives from configure events while the button is still
+        # held, so the release itself needs no special handling.
+        self.pointer_pressed = False
+
+        return Gdk.EVENT_PROPAGATE
+
+    def pointer_is_down(self):
+        """Whether the user is currently holding a pointer button on this note.
+
+        Dragging or resizing a note means holding a button, while geometry
+        changes made by the window manager or the compositor never do. The
+        button state comes from GTK's own event bookkeeping: XWayland does not
+        report held buttons through pointer queries.
+        """
+        return self.pointer_pressed
 
     def on_show(self, *args):
         self.showing = True

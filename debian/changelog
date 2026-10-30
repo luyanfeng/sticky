@@ -1,3 +1,16 @@
+sticky (1.41) alfa; urgency=medium
+
+  * Stop notes from changing size and drifting after a login. Notes were
+    still being restored late by the session, and the geometry the window
+    manager restored was saved as if the user had set it. The size was not
+    protected at all, so a note could be shrunk to its natural size, which
+    reflowed the text and pushed it into its neighbour. Geometry is now only
+    saved while a pointer button is held, which is the case when dragging or
+    resizing but never when the window manager moves the window, and the size
+    is re-asserted during the same settling period as the position.
+
+ -- luyanfeng <e0110324@ceic.com>  Fri, 30 Oct 2026 11:25:00 +0800
+
 sticky (1.40) alfa; urgency=medium
 
   * Stop the notes from drifting towards the top left corner on every
