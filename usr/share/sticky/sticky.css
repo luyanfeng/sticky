@@ -167,6 +167,12 @@ textview text {
     border-radius: 0;
 }
 
+/* The theme sizes a scrollbar through its slider, so a thin note needs the
+   slider narrowed rather than the scrollbar itself. */
+#sticky-note scrollbar slider {
+    min-width: 6px;
+}
+
 #window-button {
     background-color: transparent;
     background-image: none;

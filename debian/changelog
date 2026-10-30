@@ -1,3 +1,11 @@
+sticky (1.42) alfa; urgency=medium
+
+  * Make the note scrollbar thinner. The theme derives the width of a
+    scrollbar from its slider, so the slider is narrowed to 6px, which takes
+    the scrollbar from 16px to 14px. The horizontal scrollbar is unaffected.
+
+ -- luyanfeng <e0110324@ceic.com>  Sat, 31 Oct 2026 09:20:00 +0800
+
 sticky (1.41) alfa; urgency=medium
 
   * Stop notes from changing size and drifting after a login. Notes were
