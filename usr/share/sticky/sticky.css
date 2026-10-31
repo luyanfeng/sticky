@@ -170,7 +170,7 @@ textview text {
 /* The theme sizes a scrollbar through its slider, so a thin note needs the
    slider narrowed rather than the scrollbar itself. */
 #sticky-note scrollbar slider {
-    min-width: 6px;
+    min-width: 3px;
 }
 
 #window-button {

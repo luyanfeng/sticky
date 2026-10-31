@@ -1,3 +1,11 @@
+sticky (1.43) alfa; urgency=medium
+
+  * Narrow the note scrollbar further, from 6px to 3px. The previous change
+    only moved the scrollbar from 16px to 14px, which is not visible at
+    normal size; the slider now renders at half its previous width.
+
+ -- luyanfeng <e0110324@ceic.com>  Sat, 31 Oct 2026 08:40:00 +0800
+
 sticky (1.42) alfa; urgency=medium
 
   * Make the note scrollbar thinner. The theme derives the width of a
